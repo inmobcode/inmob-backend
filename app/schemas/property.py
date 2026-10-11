@@ -14,6 +14,7 @@ class PropertyOwnerSchema(Schema):
     email = fields.Email(allow_none=True)
     phone = fields.Str(allow_none=True, validate=validate.Length(max=50))
     notes = fields.Str(allow_none=True)
+    access_token = fields.Str(data_key="accessToken", dump_only=True)
 
 
 class PropertyPhotoSchema(Schema):

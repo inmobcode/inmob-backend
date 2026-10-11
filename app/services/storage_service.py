@@ -46,3 +46,17 @@ def upload_photo(agency_id: str, property_id: str, filename: str, content: bytes
         raise StorageError(f"Could not upload photo: {err}", 502)
 
     return client.storage.from_(BUCKET_NAME).get_public_url(path)
+
+
+def upload_agency_logo(agency_id: str, filename: str, content: bytes, content_type: str) -> str:
+    """Same bucket as property photos, under a separate agency-logos/ prefix."""
+    client = _get_client()
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webp"
+    path = f"agency-logos/{agency_id}/{uuid.uuid4().hex}.{ext}"
+
+    try:
+        client.storage.from_(BUCKET_NAME).upload(path, content, {"content-type": content_type})
+    except Exception as err:
+        raise StorageError(f"Could not upload logo: {err}", 502)
+
+    return client.storage.from_(BUCKET_NAME).get_public_url(path)

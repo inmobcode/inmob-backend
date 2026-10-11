@@ -41,6 +41,7 @@ def register_jwt_error_handlers(app: Flask) -> None:
 
 
 def register_blueprints(app: Flask) -> None:
+    from app.blueprints.agency import bp as agency_bp
     from app.blueprints.auth import bp as auth_bp
     from app.blueprints.availability import bp as availability_bp
     from app.blueprints.bookings import bp as bookings_bp
@@ -54,6 +55,7 @@ def register_blueprints(app: Flask) -> None:
 
     for bp in (
         auth_bp,
+        agency_bp,
         properties_bp,
         availability_bp,
         offers_bp,

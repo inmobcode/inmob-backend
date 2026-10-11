@@ -3,17 +3,27 @@ from marshmallow import ValidationError
 
 from app.blueprints.public import bp
 from app.models import Agency, Property
+from app.schemas.agency import AgencyPublicSchema
 from app.schemas.client import PublicInquirySchema
 from app.schemas.offer import PublicOfferInquirySchema
 from app.schemas.property import PublicPropertySchema
-from app.services import availability_service, crm_service, offer_service
+from app.services import availability_service, crm_service, offer_service, property_service
 
 property_schema = PublicPropertySchema()
 properties_schema = PublicPropertySchema(many=True)
+agency_public_schema = AgencyPublicSchema()
 
 
 def _get_agency_or_404(agency_slug: str) -> Agency | None:
     return Agency.query.filter_by(slug=agency_slug).first()
+
+
+@bp.route("/<agency_slug>", methods=["GET"])
+def get_public_agency(agency_slug):
+    agency = _get_agency_or_404(agency_slug)
+    if agency is None:
+        return jsonify({"message": "Agency not found"}), 404
+    return jsonify(agency_public_schema.dump(agency))
 
 
 @bp.route("/<agency_slug>/properties", methods=["GET"])
@@ -31,6 +41,27 @@ def list_public_properties(agency_slug):
     category = request.args.get("category")
     if category:
         query = query.filter_by(category=category)
+
+    for field, column in (
+        ("country", Property.country),
+        ("region", Property.region),
+        ("area", Property.area),
+    ):
+        value = request.args.get(field)
+        if value:
+            query = query.filter(column == value)
+
+    min_price = request.args.get("minPrice", type=float)
+    if min_price is not None:
+        query = query.filter(Property.price >= min_price)
+
+    max_price = request.args.get("maxPrice", type=float)
+    if max_price is not None:
+        query = query.filter(Property.price <= max_price)
+
+    search = request.args.get("q")
+    if search:
+        query = query.filter(Property.title.ilike(f"%{search}%"))
 
     properties = query.order_by(Property.created_at.desc()).all()
     return jsonify(properties_schema.dump(properties))
@@ -118,3 +149,11 @@ def create_public_offer_inquiry(token):
     except offer_service.OfferError as err:
         return jsonify({"message": err.message}), err.status_code
     return jsonify(offer_service.serialize_offer(offer, public=True)), 201
+
+
+@bp.route("/owners/<token>", methods=["GET"])
+def get_public_owner_portal(token):
+    owner = property_service.get_owner_by_token(token)
+    if owner is None:
+        return jsonify({"message": "Not found"}), 404
+    return jsonify(property_service.serialize_owner_portal(owner))

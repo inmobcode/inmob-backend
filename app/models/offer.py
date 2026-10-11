@@ -1,14 +1,8 @@
-import secrets
-
 from app.extensions import db
-from app.models.base import TimestampMixin, uuid_pk
+from app.models.base import TimestampMixin, generate_token, uuid_pk
 
 OFFER_STATUSES = ("DRAFT", "SENT", "VIEWED", "EXPIRED")
 DISCOUNT_TYPES = ("NONE", "PERCENT", "FIXED")
-
-
-def generate_token() -> str:
-    return secrets.token_urlsafe(8)
 
 
 class Offer(db.Model, TimestampMixin):

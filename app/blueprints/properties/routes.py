@@ -71,6 +71,15 @@ def create_owner():
     return jsonify(owner_schema.dump(owner)), 201
 
 
+@bp.route("/owners/<owner_id>/regenerate-token", methods=["POST"])
+def regenerate_owner_token(owner_id):
+    try:
+        owner = property_service.regenerate_owner_token(current_agency_id(), owner_id)
+    except property_service.PropertyError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(owner_schema.dump(owner))
+
+
 @bp.route("/<property_id>", methods=["GET"])
 def get_property(property_id):
     try:

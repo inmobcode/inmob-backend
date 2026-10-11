@@ -1,6 +1,6 @@
 from app.constants.property_catalogs import ALL_PROPERTY_TYPES
 from app.extensions import db
-from app.models.base import TimestampMixin, uuid_pk
+from app.models.base import TimestampMixin, generate_token, uuid_pk
 
 LISTING_TYPES = ("SALE", "RENT")
 CATEGORIES = ALL_PROPERTY_TYPES
@@ -16,7 +16,11 @@ class PropertyOwner(db.Model, TimestampMixin):
     email = db.Column(db.String(200), nullable=True)
     phone = db.Column(db.String(50), nullable=True)
     notes = db.Column(db.Text, nullable=True)
+    access_token = db.Column(
+        db.String(32), nullable=False, unique=True, index=True, default=generate_token
+    )
 
+    agency = db.relationship("Agency")
     properties = db.relationship("Property", back_populates="owner", lazy="dynamic")
 
 

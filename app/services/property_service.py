@@ -1,4 +1,6 @@
 from app.extensions import db
+from app.models.base import generate_token
+from app.models.booking import Booking
 from app.models.property import (
     Classification,
     Description,
@@ -9,6 +11,7 @@ from app.models.property import (
     PropertyPhoto,
     RatePeriod,
 )
+from app.schemas.property import PublicPropertySchema
 from app.utils.slugify import slugify
 
 
@@ -186,6 +189,62 @@ def create_owner(agency_id: str, data: dict) -> PropertyOwner:
     db.session.add(owner)
     db.session.commit()
     return owner
+
+
+def regenerate_owner_token(agency_id: str, owner_id: str) -> PropertyOwner:
+    owner = PropertyOwner.query.filter_by(id=owner_id, agency_id=agency_id).first()
+    if owner is None:
+        raise PropertyError("Owner not found", 404)
+    owner.access_token = generate_token()
+    db.session.commit()
+    return owner
+
+
+def get_owner_by_token(token: str) -> PropertyOwner | None:
+    return PropertyOwner.query.filter_by(access_token=token).first()
+
+
+def serialize_owner_portal(owner: PropertyOwner) -> dict:
+    public_property_schema = PublicPropertySchema()
+    properties = []
+    for prop in owner.properties:
+        bookings = (
+            Booking.query.filter_by(property_id=prop.id)
+            .order_by(Booking.start_date.desc())
+            .all()
+        )
+        properties.append(
+            {
+                **public_property_schema.dump(prop),
+                "bookings": [
+                    {
+                        "startDate": booking.start_date.isoformat() if booking.start_date else None,
+                        "endDate": booking.end_date.isoformat() if booking.end_date else None,
+                        "status": booking.status,
+                        "totalPrice": booking.total_price,
+                        "currency": booking.currency,
+                        "payments": [
+                            {
+                                "amount": payment.amount,
+                                "currency": payment.currency,
+                                "type": payment.type,
+                                "status": payment.status,
+                                "paidAt": payment.paid_at.isoformat() if payment.paid_at else None,
+                            }
+                            for payment in booking.payments
+                            if payment.type != "COMMISSION"
+                        ],
+                    }
+                    for booking in bookings
+                ],
+            }
+        )
+
+    return {
+        "ownerName": owner.name,
+        "agencyName": owner.agency.name,
+        "properties": properties,
+    }
 
 
 # --- Pools / Jacuzzis -----------------------------------------------------
