@@ -21,12 +21,12 @@ credenciales.
 
 ```bash
 flask db upgrade   # aplica las migraciones
-flask run          # http://127.0.0.1:5000
+flask run          # http://127.0.0.1:8000
 ```
 
-Nota (macOS): el puerto 5000 es usado por AirPlay Receiver (AirTunes). Para
-probar con `curl` usá `127.0.0.1:5000` en vez de `localhost:5000`, o
-desactivá AirPlay Receiver / corré `flask run -p 5001`.
+Nota (macOS): el puerto 5000 es usado por AirPlay Receiver (AirTunes), por eso
+`FLASK_RUN_PORT=8000` en `.env` — `flask run` ya levanta ahí por default. Para
+probar con `curl` usá `127.0.0.1:8000` en vez de `localhost:8000`.
 
 ## Estructura
 
