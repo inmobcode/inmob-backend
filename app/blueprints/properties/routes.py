@@ -129,6 +129,15 @@ def archive_property(property_id):
     return jsonify(property_schema.dump(prop))
 
 
+@bp.route("/<property_id>/unpublish", methods=["POST"])
+def unpublish_property(property_id):
+    try:
+        prop = property_service.set_status(current_agency_id(), property_id, "DRAFT")
+    except property_service.PropertyError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(property_schema.dump(prop))
+
+
 @bp.route("/<property_id>/rooms", methods=["POST"])
 def create_room(property_id):
     try:

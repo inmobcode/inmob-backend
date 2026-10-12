@@ -7,8 +7,11 @@ class Config:
 
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me-32-bytes-minimum")
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret-change-me-32-bytes-minimum")
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=2)
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
+    # No refresh flow is wired up on the frontend yet, so the access token
+    # itself has to carry the whole session — 6 months, same as the refresh
+    # token, so a user isn't logged out while it's still technically "valid".
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=180)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=180)
 
     # Falls back to a local SQLite file so the app runs out of the box
     # without Supabase credentials. Point DATABASE_URL at your Supabase

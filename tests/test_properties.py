@@ -50,6 +50,20 @@ def test_publish_and_archive_lifecycle(client, register_agency):
     assert archive_res.get_json()["status"] == "ARCHIVED"
 
 
+def test_unpublish_reverts_a_published_property_to_draft(client, register_agency):
+    agency = register_agency()
+    prop = _create_property(client, agency["headers"]).get_json()
+    client.post(f"/api/properties/{prop['id']}/publish", headers=agency["headers"])
+
+    unpublish_res = client.post(
+        f"/api/properties/{prop['id']}/unpublish", headers=agency["headers"]
+    )
+    assert unpublish_res.get_json()["status"] == "DRAFT"
+
+    public_res = client.get("/api/public/agencia-demo/properties")
+    assert public_res.get_json() == []
+
+
 def test_agency_cannot_access_another_agencys_property(client, register_agency):
     agency_a = register_agency(agency_name="Agencia A", email="a@demo.com")
     agency_b = register_agency(agency_name="Agencia B", email="b@demo.com")
