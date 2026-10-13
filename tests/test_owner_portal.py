@@ -1,5 +1,11 @@
+from datetime import date, timedelta
 def _create_owner(client, headers, name="Juan Propietario"):
     return client.post("/api/properties/owners", headers=headers, json={"name": name}).get_json()
+
+
+def _days_ahead(days: int) -> str:
+    """A date that stays in the future whenever the tests run."""
+    return (date.today() + timedelta(days=days)).isoformat()
 
 
 def _create_property(client, headers, owner_id, title="Casa del Owner"):
@@ -59,8 +65,8 @@ def test_public_owner_portal_shows_properties_and_filters_commission_payments(
         headers=agency["headers"],
         json={
             "propertyId": prop["id"],
-            "startDate": "2026-12-01",
-            "endDate": "2026-12-10",
+            "startDate": _days_ahead(60),
+            "endDate": _days_ahead(69),
             "totalPrice": 1000,
         },
     )
@@ -98,3 +104,16 @@ def test_public_owner_portal_shows_properties_and_filters_commission_payments(
 def test_public_owner_portal_404_for_unknown_token(client):
     res = client.get("/api/public/owners/does-not-exist")
     assert res.status_code == 404
+
+
+def test_owner_portal_includes_agency_branding_and_publication_status(client, register_agency):
+    agency = register_agency()
+    owner = _create_owner(client, agency["headers"])
+    prop = _create_property(client, agency["headers"], owner["id"])
+    client.post(f"/api/properties/{prop['id']}/publish", headers=agency["headers"])
+
+    body = client.get(f"/api/public/owners/{owner['accessToken']}").get_json()
+    assert body["agency"]["name"] == "Agencia Demo"
+    assert body["agency"]["slug"]
+    assert body["properties"][0]["status"] == "PUBLISHED"
+    assert body["properties"][0]["published"] is True

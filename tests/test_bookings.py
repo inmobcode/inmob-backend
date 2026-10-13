@@ -1,4 +1,10 @@
+from datetime import date, timedelta
 from unittest.mock import patch
+
+
+def _days_ahead(days: int) -> str:
+    """A date that stays in the future whenever the tests run."""
+    return (date.today() + timedelta(days=days)).isoformat()
 
 
 def _create_property(client, headers, listing_type="RENT", title="Casa Booking"):
@@ -30,8 +36,8 @@ def test_confirm_rental_booking_blocks_availability(client, register_agency):
         headers=agency["headers"],
         json={
             "propertyId": prop["id"],
-            "startDate": "2026-09-01",
-            "endDate": "2026-09-10",
+            "startDate": _days_ahead(30),
+            "endDate": _days_ahead(39),
             "totalPrice": 900,
         },
     )
@@ -49,7 +55,7 @@ def test_confirm_rental_booking_blocks_availability(client, register_agency):
     ).get_json()
     assert len(blocks) == 1
     assert blocks[0]["source"] == "BOOKING"
-    assert blocks[0]["startDate"] == "2026-09-01"
+    assert blocks[0]["startDate"] == _days_ahead(30)
 
 
 def test_cancel_confirmed_booking_frees_availability(client, register_agency):
@@ -58,7 +64,7 @@ def test_cancel_confirmed_booking_frees_availability(client, register_agency):
     booking = client.post(
         "/api/bookings/",
         headers=agency["headers"],
-        json={"propertyId": prop["id"], "startDate": "2026-09-01", "endDate": "2026-09-10"},
+        json={"propertyId": prop["id"], "startDate": _days_ahead(30), "endDate": _days_ahead(39)},
     ).get_json()
     client.post(f"/api/bookings/{booking['id']}/confirm", headers=agency["headers"])
 
@@ -166,8 +172,8 @@ def test_public_booking_page_hides_commission(client, register_agency):
         headers=agency["headers"],
         json={
             "propertyId": prop["id"],
-            "startDate": "2026-12-01",
-            "endDate": "2026-12-05",
+            "startDate": _days_ahead(60),
+            "endDate": _days_ahead(64),
             "totalPrice": 1200,
             "commissionAmount": 120,
         },
@@ -228,3 +234,35 @@ def test_booking_without_client_sends_nothing_until_one_is_added(client, registe
         )
     assert send.call_count == 1
     assert send.call_args.args[0] == ["ana@demo.com"]
+
+
+def test_booking_dates_cant_be_in_the_past_or_backwards(client, register_agency):
+    agency = register_agency()
+    headers = agency["headers"]
+    prop = _create_property(client, headers)
+
+    past = client.post(
+        "/api/bookings/",
+        headers=headers,
+        json={"propertyId": prop["id"], "startDate": _days_ahead(-5), "endDate": _days_ahead(2)},
+    )
+    assert past.status_code == 400
+
+    backwards = client.post(
+        "/api/bookings/",
+        headers=headers,
+        json={"propertyId": prop["id"], "startDate": _days_ahead(10), "endDate": _days_ahead(8)},
+    )
+    assert backwards.status_code == 400
+
+    today = client.post(
+        "/api/bookings/",
+        headers=headers,
+        json={"propertyId": prop["id"], "startDate": _days_ahead(0), "endDate": _days_ahead(3)},
+    )
+    assert today.status_code == 201
+
+    moved_back = client.patch(
+        f"/api/bookings/{today.get_json()['id']}", headers=headers, json={"startDate": _days_ahead(-10)}
+    )
+    assert moved_back.status_code == 400

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app.extensions import db
 from app.models import Agency, AvailabilityBlock, Booking, Client, Offer, Payment, Property
@@ -81,7 +81,22 @@ def serialize_public_booking(booking: Booking) -> dict:
     }
 
 
+def _check_dates(start: date | None, end: date | None) -> None:
+    """New dates can't be in the past, and the check-out comes after the check-in.
+
+    "Past" is judged a day behind UTC: the server doesn't know the agency's
+    timezone, and late at night in the Americas UTC is already tomorrow. The
+    date picker holds the exact line in the agency's own browser.
+    """
+    earliest = datetime.now(timezone.utc).date() - timedelta(days=1)
+    if start and start < earliest:
+        raise BookingError("La fecha de entrada ya pasó. Elegí una fecha de hoy en adelante.", 400)
+    if start and end and end <= start:
+        raise BookingError("La fecha de salida tiene que ser posterior a la de entrada.", 400)
+
+
 def create_booking(agency_id: str, created_by: str, data: dict) -> Booking:
+    _check_dates(data.get("start_date"), data.get("end_date"))
     _validate_scoped(agency_id, Property, data["property_id"], "Property")
     if data.get("client_id"):
         _validate_scoped(agency_id, Client, data["client_id"], "Client")
@@ -113,6 +128,13 @@ def update_booking(agency_id: str, booking_id: str, data: dict) -> Booking:
         raise BookingError("Cannot edit a cancelled or completed booking", 400)
     if data.get("client_id"):
         _validate_scoped(agency_id, Client, data["client_id"], "Client")
+    # Only dates that change are checked: a past stay keeps its dates when other fields are edited.
+    new_start = data.get("start_date", booking.start_date)
+    new_end = data.get("end_date", booking.end_date)
+    if new_start != booking.start_date or new_end != booking.end_date:
+        _check_dates(new_start if new_start != booking.start_date else None, new_end)
+        if new_start and new_end and new_end <= new_start:
+            raise BookingError("La fecha de salida tiene que ser posterior a la de entrada.", 400)
 
     had_client = booking.client_id is not None
     for field, value in data.items():

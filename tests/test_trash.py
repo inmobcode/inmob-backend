@@ -1,8 +1,13 @@
-from datetime import timedelta
+from datetime import date, timedelta
 
 from app.extensions import db
 from app.models import Booking, Offer, Property
 from app.utils import trash
+
+
+def _days_ahead(days: int) -> str:
+    """A date that stays in the future whenever the tests run."""
+    return (date.today() + timedelta(days=days)).isoformat()
 
 
 def _property(client, headers, title="Casa", listing_type="SALE"):
@@ -68,7 +73,7 @@ def test_trashed_booking_frees_its_dates_and_takes_them_back_on_restore(client, 
     booking = client.post(
         "/api/bookings/",
         headers=headers,
-        json={"propertyId": prop["id"], "startDate": "2026-12-01", "endDate": "2026-12-05"},
+        json={"propertyId": prop["id"], "startDate": _days_ahead(60), "endDate": _days_ahead(64)},
     ).get_json()
     client.post(f"/api/bookings/{booking['id']}/confirm", headers=headers)
     blocks = lambda: client.get(f"/api/properties/{prop['id']}/availability/", headers=headers).get_json()

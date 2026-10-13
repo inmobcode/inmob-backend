@@ -12,6 +12,7 @@ from app.models.property import (
     PropertyPhoto,
     RatePeriod,
 )
+from app.schemas.agency import AgencyPublicSchema
 from app.schemas.property import PublicPropertySchema
 from app.utils import trash
 from app.utils.slugify import slugify
@@ -270,6 +271,9 @@ def serialize_owner_portal(owner: PropertyOwner) -> dict:
         properties.append(
             {
                 **public_property_schema.dump(prop),
+                # The owner sees whether it's live; only published ones have a page to link to.
+                "status": prop.status,
+                "published": prop.status == "PUBLISHED",
                 "bookings": [
                     {
                         "startDate": booking.start_date.isoformat() if booking.start_date else None,
@@ -297,6 +301,8 @@ def serialize_owner_portal(owner: PropertyOwner) -> dict:
     return {
         "ownerName": owner.name,
         "agencyName": owner.agency.name,
+        # Branding and contact, like the client's booking page.
+        "agency": {**AgencyPublicSchema().dump(owner.agency), "slug": owner.agency.slug},
         "properties": properties,
     }
 
