@@ -74,3 +74,134 @@ def test_public_agency_endpoint_returns_branding(client, register_agency):
 def test_public_agency_endpoint_404s_for_unknown_slug(client):
     res = client.get("/api/public/no-existe")
     assert res.status_code == 404
+
+
+def test_site_settings_default_to_empty_and_merge_on_update(client, register_agency):
+    agency = register_agency(agency_name="Agencia Sitio", email="sitio@demo.com")
+
+    assert client.get("/api/agency/", headers=agency["headers"]).get_json()["site"] == {}
+
+    first = client.patch(
+        "/api/agency/site",
+        headers=agency["headers"],
+        json={"template": "editorial", "accent": "#1F6F5C", "heroTitle": "Casas en la costa"},
+    )
+    assert first.status_code == 200
+    second = client.patch("/api/agency/site", headers=agency["headers"], json={"fonts": "clasica"})
+    site = second.get_json()["site"]
+    # A partial update keeps what was saved before.
+    assert site == {
+        "template": "editorial",
+        "accent": "#1F6F5C",
+        "heroTitle": "Casas en la costa",
+        "fonts": "clasica",
+    }
+
+    public = client.get("/api/public/agencia-sitio").get_json()
+    assert public["site"]["template"] == "editorial"
+    assert public["site"]["heroTitle"] == "Casas en la costa"
+
+
+def test_site_settings_reject_unknown_template_and_bad_color(client, register_agency):
+    agency = register_agency()
+    assert client.patch("/api/agency/site", headers=agency["headers"], json={"template": "otro"}).status_code == 400
+    assert client.patch("/api/agency/site", headers=agency["headers"], json={"accent": "verde"}).status_code == 400
+
+
+def test_cover_upload_goes_through_storage_service(client, register_agency):
+    agency = register_agency()
+
+    with patch(
+        "app.blueprints.agency.routes.storage_service.upload_agency_cover",
+        return_value="https://fake-bucket.supabase.co/property-photos/agency-covers/abc.webp",
+    ) as mock_upload:
+        res = client.post(
+            "/api/agency/cover",
+            headers=agency["headers"],
+            data={"file": (io.BytesIO(b"fake-webp-bytes"), "cover.webp")},
+            content_type="multipart/form-data",
+        )
+    assert res.status_code == 200
+    mock_upload.assert_called_once()
+    assert res.get_json()["site"]["coverUrl"].startswith("https://fake-bucket.supabase.co")
+
+
+def test_site_sections_round_trip_in_order(client, register_agency):
+    agency = register_agency(agency_name="Agencia Bloques", email="bloques@demo.com")
+    sections = [
+        {"id": "ibiza", "type": "location", "title": "Ibiza", "zone": "Ibiza", "imageUrl": "https://img/ibiza.webp"},
+        {
+            "id": "verano",
+            "type": "promo",
+            "title": "Verano en la costa",
+            "badge": "15% OFF",
+            "propertyIds": ["p1", "p2"],
+            "endsAt": "2026-12-31",
+        },
+    ]
+    res = client.patch("/api/agency/site", headers=agency["headers"], json={"sections": sections})
+    assert res.status_code == 200
+    saved = res.get_json()["site"]["sections"]
+    assert [section["id"] for section in saved] == ["ibiza", "verano"]
+    assert saved[0]["visible"] is True
+    assert saved[1]["propertyIds"] == ["p1", "p2"]
+    assert saved[1]["endsAt"] == "2026-12-31"
+
+    public = client.get("/api/public/agencia-bloques").get_json()
+    assert public["site"]["sections"][0]["title"] == "Ibiza"
+
+
+def test_site_sections_reject_unknown_type_and_bad_date(client, register_agency):
+    agency = register_agency()
+    bad_type = {"sections": [{"id": "x", "type": "carousel"}]}
+    bad_date = {"sections": [{"id": "x", "type": "promo", "endsAt": "31/12/2026"}]}
+    assert client.patch("/api/agency/site", headers=agency["headers"], json=bad_type).status_code == 400
+    assert client.patch("/api/agency/site", headers=agency["headers"], json=bad_date).status_code == 400
+
+
+def test_site_image_upload_returns_url(client, register_agency):
+    agency = register_agency()
+
+    with patch(
+        "app.blueprints.agency.routes.storage_service.upload_agency_site_image",
+        return_value="https://fake-bucket.supabase.co/property-photos/agency-site/abc.webp",
+    ):
+        res = client.post(
+            "/api/agency/site-image",
+            headers=agency["headers"],
+            data={"file": (io.BytesIO(b"fake-webp-bytes"), "ibiza.webp")},
+            content_type="multipart/form-data",
+        )
+    assert res.status_code == 200
+    assert res.get_json()["url"].endswith("abc.webp")
+
+
+def test_site_sections_support_layouts_and_new_block_types(client, register_agency):
+    agency = register_agency(agency_name="Agencia Layouts", email="layouts@demo.com")
+    sections = [
+        {"id": "a", "type": "location", "layout": "carousel", "zone": "Ibiza", "propertyIds": ["p1"]},
+        {
+            "id": "b",
+            "type": "destinations",
+            "layout": "tiles",
+            "destinations": [{"id": "d1", "name": "Mykonos", "zone": "Mykonos", "imageUrl": "https://img/m.webp"}],
+        },
+        {"id": "c", "type": "cta", "layout": "photo", "buttonLabel": "Escribinos", "buttonTarget": "whatsapp"},
+        {"id": "d", "type": "text", "layout": "image-right"},
+        {"id": "e", "type": "featured", "layout": "grid", "propertyIds": ["p2", "p3"]},
+    ]
+    res = client.patch("/api/agency/site", headers=agency["headers"], json={"sections": sections})
+    assert res.status_code == 200
+    saved = {section["id"]: section for section in res.get_json()["site"]["sections"]}
+    assert saved["a"]["layout"] == "carousel"
+    assert saved["a"]["propertyIds"] == ["p1"]
+    assert saved["b"]["destinations"][0]["name"] == "Mykonos"
+    assert saved["c"]["buttonTarget"] == "whatsapp"
+
+
+def test_site_sections_reject_unknown_layout_and_button_target(client, register_agency):
+    agency = register_agency()
+    bad_layout = {"sections": [{"id": "x", "type": "text", "layout": "zigzag"}]}
+    bad_target = {"sections": [{"id": "x", "type": "cta", "buttonTarget": "phone"}]}
+    assert client.patch("/api/agency/site", headers=agency["headers"], json=bad_layout).status_code == 400
+    assert client.patch("/api/agency/site", headers=agency["headers"], json=bad_target).status_code == 400

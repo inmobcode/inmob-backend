@@ -60,3 +60,31 @@ def upload_agency_logo(agency_id: str, filename: str, content: bytes, content_ty
         raise StorageError(f"Could not upload logo: {err}", 502)
 
     return client.storage.from_(BUCKET_NAME).get_public_url(path)
+
+
+def upload_agency_cover(agency_id: str, filename: str, content: bytes, content_type: str) -> str:
+    """The public site's cover photo, under its own agency-covers/ prefix."""
+    client = _get_client()
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webp"
+    path = f"agency-covers/{agency_id}/{uuid.uuid4().hex}.{ext}"
+
+    try:
+        client.storage.from_(BUCKET_NAME).upload(path, content, {"content-type": content_type})
+    except Exception as err:
+        raise StorageError(f"Could not upload cover: {err}", 502)
+
+    return client.storage.from_(BUCKET_NAME).get_public_url(path)
+
+
+def upload_agency_site_image(agency_id: str, filename: str, content: bytes, content_type: str) -> str:
+    """Images for the public site's content blocks, under agency-site/."""
+    client = _get_client()
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webp"
+    path = f"agency-site/{agency_id}/{uuid.uuid4().hex}.{ext}"
+
+    try:
+        client.storage.from_(BUCKET_NAME).upload(path, content, {"content-type": content_type})
+    except Exception as err:
+        raise StorageError(f"Could not upload image: {err}", 502)
+
+    return client.storage.from_(BUCKET_NAME).get_public_url(path)
