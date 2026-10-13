@@ -16,7 +16,7 @@ def _auth_payload(result: dict) -> dict:
     return {
         "accessToken": result["access_token"],
         "refreshToken": result["refresh_token"],
-        "user": user_schema.dump(result["user"]),
+        "user": {**user_schema.dump(result["user"]), "agencySlug": result["agency"].slug},
     }
 
 
@@ -55,7 +55,7 @@ def login():
 def refresh():
     claims = get_jwt()
     additional_claims = {
-        key: claims[key] for key in ("agency_id", "role", "name", "email")
+        key: claims[key] for key in ("agency_id", "agency_slug", "role", "name", "email")
     }
     access_token = create_access_token(
         identity=get_jwt_identity(), additional_claims=additional_claims
@@ -69,4 +69,26 @@ def me():
     user = db.session.get(User, get_jwt_identity())
     if user is None:
         return jsonify({"message": "Not found"}), 404
-    return jsonify(user_schema.dump(user))
+    return jsonify({**user_schema.dump(user), "agencySlug": user.agency.slug})
+
+
+@bp.route("/me/agencies", methods=["GET"])
+@jwt_required()
+def my_agencies():
+    return jsonify(auth_service.list_my_agencies(get_jwt_identity()))
+
+
+@bp.route("/switch-agency", methods=["POST"])
+@jwt_required()
+def switch_agency():
+    data = request.get_json(silent=True) or {}
+    agency_id = data.get("agencyId")
+    if not agency_id:
+        return jsonify({"message": "Validation error", "errors": {"agencyId": ["Required"]}}), 400
+
+    try:
+        result = auth_service.switch_agency(get_jwt_identity(), agency_id)
+    except auth_service.AuthError as err:
+        return jsonify({"message": err.message}), err.status_code
+
+    return jsonify(_auth_payload(result))

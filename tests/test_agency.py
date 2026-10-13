@@ -205,3 +205,24 @@ def test_site_sections_reject_unknown_layout_and_button_target(client, register_
     bad_target = {"sections": [{"id": "x", "type": "cta", "buttonTarget": "phone"}]}
     assert client.patch("/api/agency/site", headers=agency["headers"], json=bad_layout).status_code == 400
     assert client.patch("/api/agency/site", headers=agency["headers"], json=bad_target).status_code == 400
+
+
+def test_agent_cannot_edit_agency_settings(client, register_agency):
+    agency = register_agency(agency_name="Agencia Permisos", email="permisos@demo.com")
+    with patch("app.services.team_service._send_invite_email") as mock_send:
+        client.post(
+            "/api/team/",
+            headers=agency["headers"],
+            json={"name": "Agent", "email": "agent@demo.com", "role": "AGENT"},
+        )
+    temp_password = mock_send.call_args[0][3]
+    agent_token = client.post(
+        "/api/auth/login", json={"email": "agent@demo.com", "password": temp_password}
+    ).get_json()["accessToken"]
+    agent_headers = {"Authorization": f"Bearer {agent_token}"}
+
+    # Reading the agency's basic info stays open (the sidebar needs it for
+    # every role), but editing it is OWNER/ADMIN only.
+    assert client.get("/api/agency/", headers=agent_headers).status_code == 200
+    assert client.patch("/api/agency/", headers=agent_headers, json={"name": "Hackeada"}).status_code == 403
+    assert client.patch("/api/agency/site", headers=agent_headers, json={"template": "editorial"}).status_code == 403

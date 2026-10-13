@@ -13,11 +13,12 @@ from app.models.property import (
     PropertyPhoto,
     RatePeriod,
 )
-from app.models.user import User
+from app.models.user import AgencyMembership, User
 
 __all__ = [
     "Agency",
     "User",
+    "AgencyMembership",
     "Property",
     "PropertyOwner",
     "PropertyPhoto",

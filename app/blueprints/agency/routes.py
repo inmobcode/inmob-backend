@@ -6,7 +6,7 @@ from app.extensions import db
 from app.models import Agency
 from app.schemas.agency import AgencySchema, AgencyUpdateSchema, SiteSettingsSchema
 from app.services import storage_service
-from app.utils.tenancy import current_agency_id
+from app.utils.tenancy import current_agency_id, require_role
 
 agency_schema = AgencySchema()
 
@@ -24,6 +24,7 @@ def get_agency():
 
 
 @bp.route("/", methods=["PATCH"])
+@require_role("OWNER", "ADMIN")
 def update_agency():
     try:
         data = AgencyUpdateSchema().load(request.get_json(silent=True) or {}, partial=True)
@@ -47,6 +48,7 @@ def update_agency():
 
 
 @bp.route("/logo", methods=["POST"])
+@require_role("OWNER", "ADMIN")
 def upload_logo():
     agency = _get_current_agency()
 
@@ -74,6 +76,7 @@ def upload_logo():
 
 
 @bp.route("/site", methods=["PATCH"])
+@require_role("OWNER", "ADMIN")
 def update_site():
     """Merges the given keys into the site settings; keys not sent stay as they were."""
     try:
@@ -90,6 +93,7 @@ def update_site():
 
 
 @bp.route("/cover", methods=["POST"])
+@require_role("OWNER", "ADMIN")
 def upload_cover():
     agency = _get_current_agency()
 
@@ -117,6 +121,7 @@ def upload_cover():
 
 
 @bp.route("/site-image", methods=["POST"])
+@require_role("OWNER", "ADMIN")
 def upload_site_image():
     """Uploads an image for a content block and returns its URL; saving the block is a separate PATCH."""
     agency = _get_current_agency()
