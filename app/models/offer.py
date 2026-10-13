@@ -3,6 +3,8 @@ from app.models.base import TimestampMixin, generate_token, uuid_pk
 
 OFFER_STATUSES = ("DRAFT", "SENT", "VIEWED", "EXPIRED")
 DISCOUNT_TYPES = ("NONE", "PERCENT", "FIXED")
+# Which properties the offer can hold: only for sale, only for rent, or both.
+OFFER_OPERATIONS = ("SALE", "RENT", "BOTH")
 
 
 class Offer(db.Model, TimestampMixin):
@@ -15,6 +17,7 @@ class Offer(db.Model, TimestampMixin):
 
     token = db.Column(db.String(32), nullable=False, unique=True, index=True, default=generate_token)
     title = db.Column(db.String(200), nullable=False)
+    operation = db.Column(db.String(4), nullable=False, default="BOTH", server_default="BOTH")
     currency = db.Column(db.String(3), nullable=False, default="USD")
     show_price = db.Column(db.Boolean, nullable=False, default=True)
     status = db.Column(db.String(20), nullable=False, default="DRAFT")

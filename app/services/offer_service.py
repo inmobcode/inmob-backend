@@ -37,6 +37,19 @@ def _apply_discount(price: float | None, discount_type: str, discount_value: flo
     return price
 
 
+LISTING_NAMES = {"SALE": "venta", "RENT": "alquiler"}
+
+
+def _check_operation(offer: Offer, prop: Property) -> None:
+    """A sale offer only holds properties for sale, a rental one only rentals."""
+    if offer.operation != "BOTH" and prop.listing_type != offer.operation:
+        raise OfferError(
+            f"«{prop.title}» es de {LISTING_NAMES.get(prop.listing_type, prop.listing_type)} "
+            f"y la oferta es de {LISTING_NAMES[offer.operation]}",
+            400,
+        )
+
+
 def _sync_sections(agency_id: str, offer: Offer, sections_data: list[dict]) -> None:
     offer.sections.clear()
     offer.offer_properties.clear()
@@ -54,6 +67,7 @@ def _sync_sections(agency_id: str, offer: Offer, sections_data: list[dict]) -> N
             prop = Property.query.filter_by(id=item["property_id"], agency_id=agency_id).first()
             if prop is None:
                 raise OfferError(f"Property {item['property_id']} not found", 404)
+            _check_operation(offer, prop)
             offer.offer_properties.append(
                 OfferProperty(
                     property_id=prop.id,
@@ -85,6 +99,7 @@ def create_offer(agency_id: str, created_by: str, data: dict) -> Offer:
         agency_id=agency_id,
         created_by=created_by,
         title=data["title"],
+        operation=data.get("operation", "BOTH"),
         currency=data.get("currency", "USD"),
         show_price=data.get("show_price", True),
         branded=data.get("branded", True),
@@ -115,6 +130,9 @@ def update_offer(agency_id: str, offer_id: str, data: dict) -> Offer:
 
     if sections is not None:
         _sync_sections(agency_id, offer, sections)
+    elif "operation" in data:
+        for offer_property in offer.offer_properties:
+            _check_operation(offer, offer_property.property)
 
     db.session.commit()
     return offer
@@ -251,6 +269,7 @@ def serialize_offer(offer: Offer, *, public: bool = False) -> dict:
         "id": offer.id,
         "token": offer.token,
         "title": offer.title,
+        "operation": offer.operation,
         "currency": offer.currency,
         "showPrice": offer.show_price,
         "branded": offer.branded,

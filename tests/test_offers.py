@@ -188,3 +188,41 @@ def test_public_property_response_hides_agency_and_owner_fields(client, register
     assert "agencyId" not in body
     assert "owner" not in body
     assert "ownerId" not in body
+
+
+def test_offer_operation_limits_which_properties_it_holds(client, register_agency):
+    agency = register_agency()
+    rental = _create_property(client, agency["headers"], title="Depto temporario")
+    sale = client.post(
+        "/api/properties/",
+        headers=agency["headers"],
+        json={"title": "Casa en venta", "listingType": "SALE", "category": "HOUSE"},
+    ).get_json()
+
+    # Defaults to BOTH, which takes either kind.
+    both = _create_offer(
+        client,
+        agency["headers"],
+        "Mixta",
+        [{"properties": [{"propertyId": rental["id"]}, {"propertyId": sale["id"]}]}],
+    )
+    assert both.status_code == 201
+    assert both.get_json()["operation"] == "BOTH"
+
+    res = client.post(
+        "/api/offers/",
+        headers=agency["headers"],
+        json={
+            "title": "Solo venta",
+            "operation": "SALE",
+            "sections": [{"properties": [{"propertyId": rental["id"]}]}],
+        },
+    )
+    assert res.status_code == 400
+    assert "alquiler" in res.get_json()["message"]
+
+    # Narrowing an offer that already holds the other kind is refused too.
+    res = client.patch(
+        f"/api/offers/{both.get_json()['id']}", headers=agency["headers"], json={"operation": "RENT"}
+    )
+    assert res.status_code == 400
