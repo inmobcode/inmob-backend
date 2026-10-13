@@ -12,6 +12,7 @@ class UserSchema(Schema):
     email = fields.Str()
     role = fields.Str()
     is_active = fields.Bool(data_key="isActive")
+    avatar_url = fields.Str(data_key="avatarUrl", dump_only=True, allow_none=True)
     created_at = fields.DateTime(data_key="createdAt", dump_only=True)
 
 
