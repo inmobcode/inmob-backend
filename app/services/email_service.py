@@ -5,6 +5,7 @@ delays or breaks the request that triggered it. Without RESEND_API_KEY the
 email is only logged, which keeps local development and tests offline.
 """
 import logging
+import re
 import threading
 
 import httpx
@@ -13,6 +14,19 @@ from flask import current_app
 logger = logging.getLogger(__name__)
 
 RESEND_URL = "https://api.resend.com/emails"
+
+
+def _display_name(name: str) -> str:
+    """A safe From display name: no characters that could change which address
+    the header points to, no line breaks, short, and marked as sent through
+    Tivvo so an agency named like a bank can't pass as one."""
+    clean = re.sub(r'[<>"\\\r\n]', " ", name)
+    clean = re.sub(r"\s+", " ", clean).strip()[:60].strip()
+    return f"{clean} vía Tivvo" if clean else "Tivvo"
+
+
+def _single_line(text: str) -> str:
+    return re.sub(r"[\r\n]+", " ", text).strip()
 
 
 def _post(api_key: str, payload: dict) -> None:
@@ -37,8 +51,8 @@ def send_email(
     reply_to: str | None = None,
     from_name: str | None = None,
 ) -> None:
-    """Queues an email. `from_name` replaces the display name of EMAIL_FROM, so
-    a client's confirmation can come "from" the agency."""
+    """Queues an email. `from_name` replaces the display name of EMAIL_FROM
+    (sanitized, see _display_name) so a client's confirmation shows the agency."""
     recipients = [address for address in to if address]
     if not recipients:
         return
@@ -46,9 +60,9 @@ def send_email(
     sender = current_app.config["EMAIL_FROM"]
     if from_name:
         address = sender.split("<")[-1].rstrip(">").strip()
-        sender = f"{from_name} <{address}>"
+        sender = f'"{_display_name(from_name)}" <{address}>'
 
-    payload = {"from": sender, "to": recipients, "subject": subject, "html": html}
+    payload = {"from": sender, "to": recipients, "subject": _single_line(subject), "html": html}
     if reply_to:
         payload["reply_to"] = reply_to
 

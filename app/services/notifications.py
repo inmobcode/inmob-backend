@@ -1,6 +1,8 @@
+from datetime import datetime, timedelta, timezone
 from html import escape
 
 from flask import current_app
+from sqlalchemy import func
 
 from app.extensions import db
 from app.models import Agency, Inquiry, Property, User
@@ -71,16 +73,38 @@ def notify_new_inquiry(inquiry: Inquiry) -> None:
         reply_to=inquiry.email,
     )
 
+    # The confirmation goes to whatever address was typed in a public form, so it
+    # must not become a way to email strangers: it carries none of the text the
+    # sender wrote, and each address gets at most one per agency a day.
+    if _confirmed_recently(inquiry):
+        return
     email_service.send_email(
         [inquiry.email],
-        f"Recibimos tu consulta" + (f" por {prop.title}" if prop else ""),
+        "Recibimos tu consulta" + (f" por {prop.title}" if prop else ""),
         _layout(
-            f'<h1 style="font-size:20px;margin:0 0 16px">Hola, {escape(inquiry.name)}</h1>'
-            f"<p style=\"margin:0 0 12px\">Recibimos tu consulta por {escape(about)}. "
+            '<h1 style="font-size:20px;margin:0 0 16px">Recibimos tu consulta</h1>'
+            f'<p style="margin:0 0 12px">Gracias por escribirnos sobre {escape(about)}. '
             "Te vamos a responder por email o por teléfono a la brevedad.</p>"
-            + (f'<p style="margin:16px 0 4px;color:#646b67">Tu mensaje:</p>{_paragraphs(inquiry.message)}' if inquiry.message else "")
-            + f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
+            f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
+            '<p style="margin:16px 0 0;color:#646b67;font-size:13px">'
+            "Si no hiciste esta consulta, podés ignorar este email.</p>"
         ),
         reply_to=agency.contact_email,
         from_name=agency.name,
     )
+
+
+def _confirmed_recently(inquiry: Inquiry) -> bool:
+    """True if this address already asked this agency something in the last day."""
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+    earlier = (
+        Inquiry.query.filter(
+            Inquiry.agency_id == inquiry.agency_id,
+            func.lower(Inquiry.email) == inquiry.email.lower(),
+            Inquiry.id != inquiry.id,
+            Inquiry.created_at >= since,
+        )
+        .limit(1)
+        .count()
+    )
+    return earlier > 0

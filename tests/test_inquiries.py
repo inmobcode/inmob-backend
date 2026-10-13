@@ -87,3 +87,36 @@ def test_agency_contact_email_receives_the_notice_when_set(client, register_agen
         _ask(client, "agencia-contacto")
 
     assert send.call_args_list[0].args[0] == ["ventas@contacto.com"]
+
+
+def test_confirmation_never_repeats_what_the_sender_wrote(client, register_agency):
+    register_agency(agency_name="Agencia Eco", email="owner@eco.com")
+
+    with patch("app.services.notifications.email_service.send_email") as send:
+        _ask(client, "agencia-eco", name="Click http://phish.example", message="Ganaste: http://phish.example")
+
+    confirmation = send.call_args_list[1]
+    html = confirmation.args[2]
+    assert "phish.example" not in html
+    assert "phish.example" not in confirmation.args[1]
+
+
+def test_confirmation_goes_out_once_a_day_per_address(client, register_agency):
+    register_agency(agency_name="Agencia Una", email="owner@una.com")
+
+    with patch("app.services.notifications.email_service.send_email") as send:
+        _ask(client, "agencia-una")
+        _ask(client, "agencia-una", email="LUCIA@demo.com", message="Otra vez")
+
+    recipients = [call.args[0] for call in send.call_args_list]
+    # Both reach the agency; only the first is confirmed to the person.
+    assert recipients.count(["owner@una.com"]) == 2
+    assert recipients.count(["lucia@demo.com"]) == 1
+
+
+def test_from_display_name_cannot_change_the_sender_address(app):
+    from app.services.email_service import _display_name
+
+    assert _display_name('Banco "Seguro" <ceo@bank.com>\r\nBcc: x@y.com') == "Banco Seguro ceo@bank.com Bcc: x@y.com vía Tivvo"
+    assert _display_name("   ") == "Tivvo"
+    assert len(_display_name("x" * 200)) <= 60 + len(" vía Tivvo")
