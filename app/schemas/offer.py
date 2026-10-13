@@ -32,6 +32,8 @@ class OfferCreateSchema(Schema):
         data_key="welcomeDateLabel", allow_none=True, validate=validate.Length(max=100)
     )
     welcome_content = fields.Str(data_key="welcomeContent", allow_none=True)
+    # A CRM client: the offer copies its name, email and phone, and "send" emails it the link.
+    client_id = fields.Str(data_key="clientId", allow_none=True)
     client_name = fields.Str(data_key="clientName", allow_none=True, validate=validate.Length(max=200))
     client_email = fields.Email(data_key="clientEmail", allow_none=True)
     client_phone = fields.Str(data_key="clientPhone", allow_none=True, validate=validate.Length(max=50))
@@ -50,6 +52,8 @@ class OfferUpdateSchema(Schema):
         data_key="welcomeDateLabel", allow_none=True, validate=validate.Length(max=100)
     )
     welcome_content = fields.Str(data_key="welcomeContent", allow_none=True)
+    # A CRM client: the offer copies its name, email and phone, and "send" emails it the link.
+    client_id = fields.Str(data_key="clientId", allow_none=True)
     client_name = fields.Str(data_key="clientName", allow_none=True, validate=validate.Length(max=200))
     client_email = fields.Email(data_key="clientEmail", allow_none=True)
     client_phone = fields.Str(data_key="clientPhone", allow_none=True, validate=validate.Length(max=50))

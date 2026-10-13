@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields, validate
+from marshmallow import Schema, fields, post_dump, post_load, validate
 
 from app.constants.property_catalogs import (
     ENERGY_CERTIFICATE_OPTIONS,
@@ -6,6 +6,7 @@ from app.constants.property_catalogs import (
     PHOTO_SECTIONS,
 )
 from app.models.property import CATEGORIES, LISTING_TYPES
+from app.utils import rich_text
 
 
 class PropertyOwnerSchema(Schema):
@@ -77,6 +78,20 @@ class DescriptionSchema(Schema):
     outdoor_description = fields.Str(data_key="outdoorDescription", allow_none=True)
     outdoor_image_url = fields.Str(data_key="outdoorImageUrl", allow_none=True)
     the_villa = fields.Dict(data_key="theVilla", allow_none=True)
+
+    # The description is formatted text (see app/utils/rich_text.py): cleaned
+    # on save, and on the way out for text stored before the editor existed.
+    @post_load
+    def clean_description(self, data, **kwargs):
+        if "description" in data:
+            data["description"] = rich_text.sanitize(data["description"])
+        return data
+
+    @post_dump
+    def clean_description_out(self, data, **kwargs):
+        if data.get("description"):
+            data["description"] = rich_text.sanitize(data["description"])
+        return data
 
 
 PublicDescriptionSchema = DescriptionSchema  # all of it is public-facing marketing content

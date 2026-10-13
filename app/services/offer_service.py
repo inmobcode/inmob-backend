@@ -1,10 +1,13 @@
 from datetime import datetime, timezone
 
 from app.extensions import db
+from app.models.client import Client, Interaction
 from app.models.offer import Offer, OfferProperty, OfferSection
 from app.models.property import Property
 from app.schemas.property import PropertySchema, PublicPropertySchema
 from app.services import crm_service
+from app.services.notifications import notify_offer_sent
+from app.utils import rich_text
 
 _property_schema = PropertySchema()
 _public_property_schema = PublicPropertySchema()
@@ -58,7 +61,7 @@ def _sync_sections(agency_id: str, offer: Offer, sections_data: list[dict]) -> N
     for section_index, section_data in enumerate(sections_data):
         section = OfferSection(
             title=section_data.get("title"),
-            text=section_data.get("text"),
+            text=rich_text.sanitize(section_data.get("text"), inline=True),
             position=section_index,
         )
         offer.sections.append(section)
@@ -81,6 +84,24 @@ def _sync_sections(agency_id: str, offer: Offer, sections_data: list[dict]) -> N
                 )
             )
             position += 1
+
+
+def _assign_client(agency_id: str, offer: Offer, client_id: str | None) -> None:
+    """Links the offer to a CRM client and copies its contact details, or
+    unlinks it (and clears them) when client_id is None."""
+    if client_id is None:
+        offer.client_id = None
+        offer.client_name = None
+        offer.client_email = None
+        offer.client_phone = None
+        return
+    client = Client.query.filter_by(id=client_id, agency_id=agency_id).first()
+    if client is None:
+        raise OfferError("Client not found", 404)
+    offer.client_id = client.id
+    offer.client_name = client.name
+    offer.client_email = client.email
+    offer.client_phone = client.phone
 
 
 def list_offers(agency_id: str):
@@ -106,13 +127,15 @@ def create_offer(agency_id: str, created_by: str, data: dict) -> Offer:
         expires_at=_naive_utc(data.get("expires_at")),
         welcome_title=data.get("welcome_title"),
         welcome_date_label=data.get("welcome_date_label"),
-        welcome_content=data.get("welcome_content"),
+        welcome_content=rich_text.sanitize(data.get("welcome_content")),
         client_name=data.get("client_name"),
         client_email=data.get("client_email"),
         client_phone=data.get("client_phone"),
         status="DRAFT",
     )
     db.session.add(offer)
+    if data.get("client_id"):
+        _assign_client(agency_id, offer, data["client_id"])
     _sync_sections(agency_id, offer, data.get("sections", []))
     db.session.commit()
     return offer
@@ -122,8 +145,12 @@ def update_offer(agency_id: str, offer_id: str, data: dict) -> Offer:
     offer = get_offer(agency_id, offer_id)
 
     sections = data.pop("sections", None)
+    if "client_id" in data:
+        _assign_client(agency_id, offer, data.pop("client_id"))
     if "expires_at" in data:
         data["expires_at"] = _naive_utc(data["expires_at"])
+    if "welcome_content" in data:
+        data["welcome_content"] = rich_text.sanitize(data["welcome_content"])
 
     for field, value in data.items():
         setattr(offer, field, value)
@@ -145,11 +172,27 @@ def delete_offer(agency_id: str, offer_id: str) -> None:
 
 
 def send_offer(agency_id: str, offer_id: str) -> Offer:
+    """Publishes a draft's link and emails it to the offer's client. An offer
+    already out can be sent again, which only re-emails the client."""
     offer = get_offer(agency_id, offer_id)
-    if offer.status != "DRAFT":
-        raise OfferError("Only draft offers can be sent", 400)
-    offer.status = "SENT"
+    if offer.status in TERMINAL_STATUSES:
+        raise OfferError("Esta oferta venció", 400)
+    client = db.session.get(Client, offer.client_id) if offer.client_id else None
+    if offer.status != "DRAFT" and client is None:
+        raise OfferError("La oferta ya está publicada y no tiene cliente al que enviársela", 400)
+    if offer.status == "DRAFT":
+        offer.status = "SENT"
+    if client is not None:
+        # Leave a trace in the client's history, like inquiries do.
+        db.session.add(
+            Interaction(
+                client_id=client.id,
+                type="EMAIL",
+                content=f"Se le envió la oferta «{offer.title}» a {client.email}.",
+            )
+        )
     db.session.commit()
+    notify_offer_sent(offer)
     return offer
 
 
@@ -245,7 +288,7 @@ def serialize_offer(offer: Offer, *, public: bool = False) -> dict:
             {
                 "id": section.id,
                 "title": section.title,
-                "text": section.text,
+                "text": rich_text.sanitize(section.text, inline=True),
                 "position": section.position,
                 "properties": [
                     _serialize_item(op) for op in properties_by_section.get(section.id, [])
@@ -277,7 +320,8 @@ def serialize_offer(offer: Offer, *, public: bool = False) -> dict:
         "expiresAt": offer.expires_at.isoformat() if offer.expires_at else None,
         "welcomeTitle": offer.welcome_title,
         "welcomeDateLabel": offer.welcome_date_label,
-        "welcomeContent": offer.welcome_content,
+        # Also cleaned on the way out: text stored before the editor existed never went through it.
+        "welcomeContent": rich_text.sanitize(offer.welcome_content),
         "clientName": offer.client_name,
         "clientEmail": offer.client_email,
         "clientPhone": offer.client_phone,

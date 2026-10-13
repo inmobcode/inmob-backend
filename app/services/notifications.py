@@ -5,8 +5,9 @@ from flask import current_app
 from sqlalchemy import func
 
 from app.extensions import db
-from app.models import Agency, Booking, Inquiry, Property, User
+from app.models import Agency, Booking, Client, Inquiry, Offer, Property, User
 from app.services import email_service
+from app.utils import rich_text
 
 
 def _agency_recipients(agency: Agency) -> list[str]:
@@ -170,6 +171,35 @@ def notify_booking(booking: Booking, event: str) -> None:
             + f'<p style="margin:24px 0 0"><a href="{booking_url(booking)}" style="background:#1b201e;color:#fff;'
             'padding:10px 16px;border-radius:8px;text-decoration:none">Ver mi reserva</a></p>'
             f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
+        ),
+        reply_to=agency.contact_email,
+        from_name=agency.name,
+    )
+
+
+def notify_offer_sent(offer: Offer) -> None:
+    """Emails the offer's CRM client the link to the offer. Without a linked
+    client nothing goes out: the agency shares the link by hand."""
+    client = db.session.get(Client, offer.client_id) if offer.client_id else None
+    if client is None or not client.email:
+        return
+    agency = db.session.get(Agency, offer.agency_id)
+    url = f"{current_app.config['FRONTEND_URL'].rstrip('/')}/offer/{offer.token}"
+    first_name = client.name.split()[0] if client.name.strip() else ""
+    # Stored already clean; sanitize also turns older plain text into paragraphs.
+    welcome = rich_text.sanitize(offer.welcome_content) or ""
+    email_service.send_email(
+        [client.email],
+        f"{agency.name} te envió una propuesta: {offer.title}",
+        _layout(
+            f'<h1 style="font-size:20px;margin:0 0 16px">{escape(offer.title)}</h1>'
+            + (f'<p style="margin:0 0 12px">Hola {escape(first_name)},</p>' if first_name else "")
+            + f'<p style="margin:0 0 12px">{escape(agency.name)} preparó esta propuesta para vos.</p>'
+            + welcome
+            + f'<p style="margin:24px 0 0"><a href="{url}" style="background:#1b201e;color:#fff;'
+            'padding:10px 16px;border-radius:8px;text-decoration:none">Ver la propuesta</a></p>'
+            f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
+            '<p style="margin:16px 0 0;color:#646b67;font-size:13px">Respondé este email para escribirle a la agencia.</p>'
         ),
         reply_to=agency.contact_email,
         from_name=agency.name,

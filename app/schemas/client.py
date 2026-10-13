@@ -1,6 +1,14 @@
-from marshmallow import Schema, fields, validate
+from marshmallow import Schema, fields, post_dump, post_load, validate
 
 from app.models.client import CLIENT_SOURCES, CLIENT_STAGES, INQUIRY_TYPES, INTERACTION_TYPES
+from app.utils import rich_text
+
+
+def _clean_notes(data):
+    """Notes are formatted text (see app/utils/rich_text.py)."""
+    if data.get("notes"):
+        data["notes"] = rich_text.sanitize(data["notes"])
+    return data
 
 
 class ClientSchema(Schema):
@@ -16,6 +24,14 @@ class ClientSchema(Schema):
     created_at = fields.DateTime(data_key="createdAt", dump_only=True)
     updated_at = fields.DateTime(data_key="updatedAt", dump_only=True)
 
+    @post_load
+    def clean_notes(self, data, **kwargs):
+        return _clean_notes(data)
+
+    @post_dump
+    def clean_notes_out(self, data, **kwargs):
+        return _clean_notes(data)
+
 
 class ClientUpdateSchema(Schema):
     name = fields.Str(validate=validate.Length(min=2, max=200))
@@ -23,6 +39,10 @@ class ClientUpdateSchema(Schema):
     assigned_agent_id = fields.Str(data_key="assignedAgentId", allow_none=True)
     stage = fields.Str(validate=validate.OneOf(CLIENT_STAGES))
     notes = fields.Str(allow_none=True)
+
+    @post_load
+    def clean_notes(self, data, **kwargs):
+        return _clean_notes(data)
 
 
 class InteractionSchema(Schema):

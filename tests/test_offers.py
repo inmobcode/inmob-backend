@@ -1,3 +1,6 @@
+from unittest.mock import patch
+
+
 def _create_property(client, headers, title="Casa Linda", price=1000):
     res = client.post(
         "/api/properties/",
@@ -226,3 +229,112 @@ def test_offer_operation_limits_which_properties_it_holds(client, register_agenc
         f"/api/offers/{both.get_json()['id']}", headers=agency["headers"], json={"operation": "RENT"}
     )
     assert res.status_code == 400
+
+
+def _create_client(client, headers, name="Ana Pérez", email="ana@example.com"):
+    return client.post("/api/clients/", headers=headers, json={"name": name, "email": email}).get_json()
+
+
+def test_assigning_a_client_copies_its_contact_details(client, register_agency):
+    agency = register_agency()
+    crm_client = _create_client(client, agency["headers"])
+    offer = _create_offer(client, agency["headers"], "Oferta", sections=[]).get_json()
+
+    res = client.patch(f"/api/offers/{offer['id']}", headers=agency["headers"], json={"clientId": crm_client["id"]})
+    body = res.get_json()
+    assert body["clientId"] == crm_client["id"]
+    assert body["clientName"] == "Ana Pérez"
+    assert body["clientEmail"] == "ana@example.com"
+
+    res = client.patch(f"/api/offers/{offer['id']}", headers=agency["headers"], json={"clientId": None})
+    body = res.get_json()
+    assert body["clientId"] is None
+    assert body["clientEmail"] is None
+
+
+def test_assigning_a_client_from_another_agency_fails(client, register_agency):
+    agency = register_agency()
+    other = register_agency(agency_name="Otra", email="owner@otra.com")
+    foreign = _create_client(client, other["headers"])
+    offer = _create_offer(client, agency["headers"], "Oferta", sections=[]).get_json()
+
+    res = client.patch(f"/api/offers/{offer['id']}", headers=agency["headers"], json={"clientId": foreign["id"]})
+    assert res.status_code == 404
+
+
+def test_sending_an_offer_emails_its_client_and_logs_it(client, register_agency):
+    agency = register_agency()
+    crm_client = _create_client(client, agency["headers"])
+    offer = _create_offer(client, agency["headers"], "Oferta verano", sections=[]).get_json()
+    client.patch(f"/api/offers/{offer['id']}", headers=agency["headers"], json={"clientId": crm_client["id"]})
+
+    with patch("app.services.notifications.email_service.send_email") as send:
+        client.post(f"/api/offers/{offer['id']}/send", headers=agency["headers"])
+
+    send.assert_called_once()
+    to, subject, html = send.call_args.args
+    assert to == ["ana@example.com"]
+    assert "Oferta verano" in subject
+    assert f"/offer/{offer['token']}" in html
+
+    history = client.get(f"/api/clients/{crm_client['id']}", headers=agency["headers"]).get_json()["interactions"]
+    assert any("Oferta verano" in item["content"] for item in history)
+
+
+def test_sending_an_offer_without_client_sends_no_email(client, register_agency):
+    agency = register_agency()
+    offer = _create_offer(client, agency["headers"], "Oferta", sections=[]).get_json()
+
+    with patch("app.services.notifications.email_service.send_email") as send:
+        res = client.post(f"/api/offers/{offer['id']}/send", headers=agency["headers"])
+
+    assert res.get_json()["status"] == "SENT"
+    send.assert_not_called()
+
+
+def test_resending_an_offer_emails_the_client_again_without_changing_status(client, register_agency):
+    agency = register_agency()
+    offer = _create_offer(client, agency["headers"], "Oferta", sections=[]).get_json()
+    client.post(f"/api/offers/{offer['id']}/send", headers=agency["headers"])
+
+    # Out already and still without client: nothing to send it to.
+    res = client.post(f"/api/offers/{offer['id']}/send", headers=agency["headers"])
+    assert res.status_code == 400
+
+    crm_client = _create_client(client, agency["headers"])
+    client.patch(f"/api/offers/{offer['id']}", headers=agency["headers"], json={"clientId": crm_client["id"]})
+    with patch("app.services.notifications.email_service.send_email") as send:
+        res = client.post(f"/api/offers/{offer['id']}/send", headers=agency["headers"])
+
+    assert res.get_json()["status"] == "SENT"
+    send.assert_called_once()
+
+
+def test_welcome_content_keeps_formatting_and_drops_anything_else(client, register_agency):
+    agency = register_agency()
+    offer = _create_offer(client, agency["headers"], "Oferta", sections=[]).get_json()
+
+    html = (
+        '<h2>Hola</h2><p><strong>Una</strong> <em>propuesta</em> <a href="https://x.com" onclick="evil()">link</a></p>'
+        '<script>alert(1)</script><p style="color:red">sin estilo</p><a href="javascript:alert(1)">no</a>'
+    )
+    res = client.patch(f"/api/offers/{offer['id']}", headers=agency["headers"], json={"welcomeContent": html})
+    saved = res.get_json()["welcomeContent"]
+
+    assert "<h2>Hola</h2>" in saved
+    assert "<strong>Una</strong>" in saved and "<em>propuesta</em>" in saved
+    assert 'href="https://x.com"' in saved
+    for banned in ("script", "onclick", "style=", "javascript:"):
+        assert banned not in saved
+
+
+def test_welcome_content_plain_text_becomes_paragraphs_and_empty_becomes_null(client, register_agency):
+    agency = register_agency()
+    offer = _create_offer(client, agency["headers"], "Oferta", sections=[]).get_json()
+    url = f"/api/offers/{offer['id']}"
+
+    res = client.patch(url, headers=agency["headers"], json={"welcomeContent": "Hola\n\n<b>Chau</b>"})
+    assert res.get_json()["welcomeContent"] == "<p>Hola</p><p>&lt;b&gt;Chau&lt;/b&gt;</p>"
+
+    res = client.patch(url, headers=agency["headers"], json={"welcomeContent": "<p></p>"})
+    assert res.get_json()["welcomeContent"] is None
