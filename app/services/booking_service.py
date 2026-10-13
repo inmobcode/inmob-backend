@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 
 from app.extensions import db
-from app.models import AvailabilityBlock, Booking, Client, Offer, Payment, Property
+from app.models import Agency, AvailabilityBlock, Booking, Client, Offer, Payment, Property
+from app.schemas.agency import AgencyPublicSchema
+from app.schemas.property import PublicPropertySchema
+from app.services.notifications import notify_booking
 
 TERMINAL_STATUSES = ("CANCELLED", "COMPLETED")
 
@@ -31,6 +34,46 @@ def get_booking(agency_id: str, booking_id: str) -> Booking:
     return booking
 
 
+def get_booking_by_token(token: str) -> Booking:
+    booking = Booking.query.filter_by(token=token).first()
+    if booking is None:
+        raise BookingError("Booking not found", 404)
+    return booking
+
+
+def serialize_public_booking(booking: Booking) -> dict:
+    """What the client sees on their booking page: no commission, no internal
+    notes, and only the payments they make (deposit and balance)."""
+    agency = db.session.get(Agency, booking.agency_id)
+    prop = booking.property
+    return {
+        "status": booking.status,
+        "startDate": booking.start_date.isoformat() if booking.start_date else None,
+        "endDate": booking.end_date.isoformat() if booking.end_date else None,
+        "totalPrice": booking.total_price,
+        "currency": booking.currency,
+        "clientName": booking.client.name if booking.client else None,
+        "createdAt": booking.created_at.isoformat() + "+00:00",
+        "payments": [
+            {
+                "amount": payment.amount,
+                "currency": payment.currency,
+                "type": payment.type,
+                "status": payment.status,
+                "paidAt": payment.paid_at.isoformat() + "+00:00" if payment.paid_at else None,
+            }
+            for payment in booking.payments
+            if payment.type != "COMMISSION"
+        ],
+        "property": {
+            **PublicPropertySchema().dump(prop),
+            # Drafts have no public page to link to.
+            "published": prop.status == "PUBLISHED",
+        },
+        "agency": {**AgencyPublicSchema().dump(agency), "slug": agency.slug},
+    }
+
+
 def create_booking(agency_id: str, created_by: str, data: dict) -> Booking:
     _validate_scoped(agency_id, Property, data["property_id"], "Property")
     if data.get("client_id"):
@@ -53,6 +96,7 @@ def create_booking(agency_id: str, created_by: str, data: dict) -> Booking:
     )
     db.session.add(booking)
     db.session.commit()
+    notify_booking(booking, "created")
     return booking
 
 
@@ -63,10 +107,15 @@ def update_booking(agency_id: str, booking_id: str, data: dict) -> Booking:
     if data.get("client_id"):
         _validate_scoped(agency_id, Client, data["client_id"], "Client")
 
+    had_client = booking.client_id is not None
     for field, value in data.items():
         setattr(booking, field, value)
 
     db.session.commit()
+    # A client added after the fact gets the same email as if they'd been
+    # there from the start; changing an existing client sends nothing.
+    if not had_client and booking.client_id:
+        notify_booking(booking, "created")
     return booking
 
 
@@ -98,6 +147,7 @@ def confirm_booking(agency_id: str, booking_id: str) -> Booking:
 
     booking.status = "CONFIRMED"
     db.session.commit()
+    notify_booking(booking, "confirmed")
     return booking
 
 
@@ -114,6 +164,7 @@ def cancel_booking(agency_id: str, booking_id: str) -> Booking:
 
     booking.status = "CANCELLED"
     db.session.commit()
+    notify_booking(booking, "cancelled")
     return booking
 
 

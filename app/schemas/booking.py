@@ -18,6 +18,7 @@ class PaymentSchema(Schema):
 class BookingSchema(Schema):
     id = fields.Str(dump_only=True)
     agency_id = fields.Str(data_key="agencyId", dump_only=True)
+    token = fields.Str(dump_only=True)
     property_id = fields.Str(data_key="propertyId", required=True)
     client_id = fields.Str(data_key="clientId", allow_none=True)
     offer_id = fields.Str(data_key="offerId", allow_none=True)

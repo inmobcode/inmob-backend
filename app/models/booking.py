@@ -1,9 +1,16 @@
+import secrets
+
 from app.extensions import db
 from app.models.base import TimestampMixin, uuid_pk
 
 BOOKING_STATUSES = ("PENDING", "CONFIRMED", "CANCELLED", "COMPLETED")
 PAYMENT_TYPES = ("DEPOSIT", "BALANCE", "COMMISSION")
 PAYMENT_STATUSES = ("PENDING", "PAID")
+
+
+def generate_booking_token() -> str:
+    # Longer than offer tokens: the link shows a person's dates and payments.
+    return secrets.token_urlsafe(16)
 
 
 class Booking(db.Model, TimestampMixin):
@@ -15,6 +22,11 @@ class Booking(db.Model, TimestampMixin):
     client_id = db.Column(db.String(36), db.ForeignKey("clients.id"), nullable=True, index=True)
     offer_id = db.Column(db.String(36), db.ForeignKey("offers.id"), nullable=True)
     created_by = db.Column(db.String(36), db.ForeignKey("users.id"), nullable=True)
+    # Opens the client's read-only page at /booking/<token>; whoever has the
+    # link can see it, so it is only ever sent to the booking's client.
+    token = db.Column(
+        db.String(32), nullable=False, unique=True, index=True, default=generate_booking_token
+    )
     # Set while CONFIRMED so the property calendar shows these dates as unavailable;
     # cleared (and the block removed) if the booking is cancelled.
     availability_block_id = db.Column(

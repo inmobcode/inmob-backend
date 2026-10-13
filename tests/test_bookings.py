@@ -1,3 +1,6 @@
+from unittest.mock import patch
+
+
 def _create_property(client, headers, listing_type="RENT", title="Casa Booking"):
     res = client.post(
         "/api/properties/",
@@ -146,3 +149,82 @@ def test_agency_cannot_access_another_agencys_booking(client, register_agency):
 
     res = client.get(f"/api/bookings/{booking['id']}", headers=agency_b["headers"])
     assert res.status_code == 404
+
+
+def _create_client(client, headers, email="ana@demo.com"):
+    res = client.post(
+        "/api/clients/", headers=headers, json={"name": "Ana Pérez", "email": email}
+    )
+    return res.get_json()
+
+
+def test_public_booking_page_hides_commission(client, register_agency):
+    agency = register_agency(agency_name="Agencia Reservas", email="owner@reservas.com")
+    prop = _create_property(client, agency["headers"], title="Casa del lago")
+    booking = client.post(
+        "/api/bookings/",
+        headers=agency["headers"],
+        json={
+            "propertyId": prop["id"],
+            "startDate": "2026-12-01",
+            "endDate": "2026-12-05",
+            "totalPrice": 1200,
+            "commissionAmount": 120,
+        },
+    ).get_json()
+    for payment_type in ("DEPOSIT", "COMMISSION"):
+        client.post(
+            f"/api/bookings/{booking['id']}/payments",
+            headers=agency["headers"],
+            json={"amount": 100, "type": payment_type},
+        )
+
+    page = client.get(f"/api/public/bookings/{booking['token']}").get_json()
+    assert page["property"]["title"] == "Casa del lago"
+    assert page["agency"]["slug"] == "agencia-reservas"
+    assert page["totalPrice"] == 1200
+    assert "commissionAmount" not in page
+    assert [p["type"] for p in page["payments"]] == ["DEPOSIT"]
+
+    assert client.get("/api/public/bookings/no-existe").status_code == 404
+
+
+def test_client_gets_an_email_on_each_step(client, register_agency):
+    agency = register_agency(agency_name="Agencia Mails", email="owner@mails.com")
+    prop = _create_property(client, agency["headers"])
+    person = _create_client(client, agency["headers"])
+
+    with patch("app.services.notifications.email_service.send_email") as send:
+        booking = client.post(
+            "/api/bookings/",
+            headers=agency["headers"],
+            json={"propertyId": prop["id"], "clientId": person["id"]},
+        ).get_json()
+        client.post(f"/api/bookings/{booking['id']}/confirm", headers=agency["headers"])
+        client.post(f"/api/bookings/{booking['id']}/cancel", headers=agency["headers"])
+
+    subjects = [call.args[1] for call in send.call_args_list]
+    assert [call.args[0] for call in send.call_args_list] == [["ana@demo.com"]] * 3
+    assert subjects[1].startswith("Reserva confirmada")
+    assert subjects[2].startswith("Reserva cancelada")
+    assert f"/booking/{booking['token']}" in send.call_args_list[0].args[2]
+    assert send.call_args_list[0].kwargs["from_name"] == "Agencia Mails"
+
+
+def test_booking_without_client_sends_nothing_until_one_is_added(client, register_agency):
+    agency = register_agency(agency_name="Agencia Sin", email="owner@sin.com")
+    prop = _create_property(client, agency["headers"])
+    person = _create_client(client, agency["headers"])
+
+    with patch("app.services.notifications.email_service.send_email") as send:
+        booking = client.post(
+            "/api/bookings/", headers=agency["headers"], json={"propertyId": prop["id"]}
+        ).get_json()
+        assert send.call_count == 0
+        client.patch(
+            f"/api/bookings/{booking['id']}",
+            headers=agency["headers"],
+            json={"clientId": person["id"]},
+        )
+    assert send.call_count == 1
+    assert send.call_args.args[0] == ["ana@demo.com"]

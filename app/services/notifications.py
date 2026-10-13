@@ -5,7 +5,7 @@ from flask import current_app
 from sqlalchemy import func
 
 from app.extensions import db
-from app.models import Agency, Inquiry, Property, User
+from app.models import Agency, Booking, Inquiry, Property, User
 from app.services import email_service
 
 
@@ -108,3 +108,69 @@ def _confirmed_recently(inquiry: Inquiry) -> bool:
         .count()
     )
     return earlier > 0
+
+
+MONTHS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+          "septiembre", "octubre", "noviembre", "diciembre")
+
+# Subject, heading and first line of each email the client gets about a booking.
+BOOKING_EMAILS = {
+    "created": (
+        "Tu reserva en {property}",
+        "Recibimos tu reserva",
+        "Registramos tu reserva en {property}. Te avisamos por este medio cuando esté confirmada.",
+    ),
+    "confirmed": (
+        "Reserva confirmada: {property}",
+        "Tu reserva está confirmada",
+        "Confirmamos tu reserva en {property}.",
+    ),
+    "cancelled": (
+        "Reserva cancelada: {property}",
+        "Tu reserva fue cancelada",
+        "Cancelamos tu reserva en {property}. Si tenés dudas, respondé este email.",
+    ),
+}
+
+
+def _long_date(day) -> str:
+    return f"{day.day} de {MONTHS[day.month - 1]} de {day.year}"
+
+
+def booking_url(booking: Booking) -> str:
+    return f"{current_app.config['FRONTEND_URL'].rstrip('/')}/booking/{booking.token}"
+
+
+def notify_booking(booking: Booking, event: str) -> None:
+    """Tells the booking's client it was created, confirmed or cancelled, with
+    the link to their booking page. Without a client (or its email) nothing
+    goes out."""
+    client = booking.client
+    if client is None or not client.email:
+        return
+    agency = db.session.get(Agency, booking.agency_id)
+    title = booking.property.title if booking.property else "la propiedad"
+    subject, heading, lead = BOOKING_EMAILS[event]
+
+    dates = ""
+    if booking.start_date and booking.end_date:
+        dates = (
+            '<p style="margin:0 0 12px">'
+            f"Del {_long_date(booking.start_date)} al {_long_date(booking.end_date)}.</p>"
+        )
+    first_name = client.name.split()[0] if client.name.strip() else ""
+    email_service.send_email(
+        [client.email],
+        subject.format(property=title),
+        _layout(
+            f'<h1 style="font-size:20px;margin:0 0 16px">{heading}</h1>'
+            + (f'<p style="margin:0 0 12px">Hola {escape(first_name)},</p>' if first_name else "")
+            + f'<p style="margin:0 0 12px">{escape(lead.format(property=title))}</p>'
+            + dates
+            + f'<p style="margin:24px 0 0"><a href="{booking_url(booking)}" style="background:#1b201e;color:#fff;'
+            'padding:10px 16px;border-radius:8px;text-decoration:none">Ver mi reserva</a></p>'
+            f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
+        ),
+        reply_to=agency.contact_email,
+        from_name=agency.name,
+    )

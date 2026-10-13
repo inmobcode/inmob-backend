@@ -7,7 +7,7 @@ from app.schemas.agency import AgencyPublicSchema
 from app.schemas.client import PublicInquirySchema
 from app.schemas.offer import PublicOfferInquirySchema
 from app.schemas.property import PublicPropertySchema
-from app.services import availability_service, crm_service, offer_service, property_service
+from app.services import availability_service, booking_service, crm_service, offer_service, property_service
 
 property_schema = PublicPropertySchema()
 properties_schema = PublicPropertySchema(many=True)
@@ -157,3 +157,12 @@ def get_public_owner_portal(token):
     if owner is None:
         return jsonify({"message": "Not found"}), 404
     return jsonify(property_service.serialize_owner_portal(owner))
+
+
+@bp.route("/bookings/<token>", methods=["GET"])
+def get_public_booking(token):
+    try:
+        booking = booking_service.get_booking_by_token(token)
+    except booking_service.BookingError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(booking_service.serialize_public_booking(booking))
