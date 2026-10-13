@@ -12,6 +12,20 @@ def _now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _iso(value: datetime | None) -> str | None:
+    """Timestamps are stored as naive UTC; say so, or browsers read them as local time."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
+
+
+def _cover(prop: Property) -> str | None:
+    photos = sorted(prop.photos, key=lambda photo: (not photo.is_cover, photo.position))
+    return photos[0].url if photos else None
+
+
 def _serialize(inquiry: Inquiry, clients: dict, properties: dict, offers: dict) -> dict:
     client = clients.get(inquiry.client_id)
     prop = properties.get(inquiry.property_id)
@@ -23,10 +37,12 @@ def _serialize(inquiry: Inquiry, clients: dict, properties: dict, offers: dict) 
         "email": inquiry.email,
         "phone": inquiry.phone,
         "message": inquiry.message,
-        "createdAt": inquiry.created_at.isoformat() if inquiry.created_at else None,
-        "readAt": inquiry.read_at.isoformat() if inquiry.read_at else None,
+        "createdAt": _iso(inquiry.created_at),
+        "readAt": _iso(inquiry.read_at),
         "client": {"id": client.id, "name": client.name, "stage": client.stage} if client else None,
-        "property": {"id": prop.id, "title": prop.title, "slug": prop.slug} if prop else None,
+        "property": (
+            {"id": prop.id, "title": prop.title, "slug": prop.slug, "coverUrl": _cover(prop)} if prop else None
+        ),
         "offer": {"id": offer.id, "title": offer.title} if offer else None,
     }
 

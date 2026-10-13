@@ -120,3 +120,11 @@ def test_from_display_name_cannot_change_the_sender_address(app):
     assert _display_name('Banco "Seguro" <ceo@bank.com>\r\nBcc: x@y.com') == "Banco Seguro ceo@bank.com Bcc: x@y.com vía Tivvo"
     assert _display_name("   ") == "Tivvo"
     assert len(_display_name("x" * 200)) <= 60 + len(" vía Tivvo")
+
+
+def test_inbox_timestamps_say_they_are_utc(client, register_agency):
+    agency = register_agency(agency_name="Agencia Hora", email="owner@hora.com")
+    _ask(client, "agencia-hora")
+    item = client.get("/api/inquiries/", headers=agency["headers"]).get_json()[0]
+    # Without the offset, browsers read the time as local and it drifts by the timezone.
+    assert item["createdAt"].endswith("+00:00")
