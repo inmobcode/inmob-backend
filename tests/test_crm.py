@@ -33,7 +33,8 @@ def test_public_property_inquiry_creates_client_and_interaction(client, register
 
     detail = client.get(f"/api/clients/{clients[0]['id']}", headers=agency["headers"]).get_json()
     assert len(detail["interactions"]) == 1
-    assert "Consultó por una propiedad" in detail["interactions"][0]["content"]
+    # The note names the listing, so the history says what they asked about.
+    assert "Consultó por «Depto Centro»" in detail["interactions"][0]["content"]
 
 
 def test_repeat_inquiry_same_email_reuses_client(client, register_agency):

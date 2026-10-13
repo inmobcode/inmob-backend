@@ -1,0 +1,89 @@
+from datetime import datetime, timezone
+
+from flask import jsonify, request
+
+from app.blueprints.inquiries import bp
+from app.extensions import db
+from app.models import Client, Inquiry, Offer, Property
+from app.utils.tenancy import current_agency_id
+
+
+def _now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _serialize(inquiry: Inquiry, clients: dict, properties: dict, offers: dict) -> dict:
+    client = clients.get(inquiry.client_id)
+    prop = properties.get(inquiry.property_id)
+    offer = offers.get(inquiry.offer_id)
+    return {
+        "id": inquiry.id,
+        "type": inquiry.inquiry_type,
+        "name": inquiry.name,
+        "email": inquiry.email,
+        "phone": inquiry.phone,
+        "message": inquiry.message,
+        "createdAt": inquiry.created_at.isoformat() if inquiry.created_at else None,
+        "readAt": inquiry.read_at.isoformat() if inquiry.read_at else None,
+        "client": {"id": client.id, "name": client.name, "stage": client.stage} if client else None,
+        "property": {"id": prop.id, "title": prop.title, "slug": prop.slug} if prop else None,
+        "offer": {"id": offer.id, "title": offer.title} if offer else None,
+    }
+
+
+def _serialize_many(inquiries: list[Inquiry]) -> list[dict]:
+    """Loads the related client, property and offer of the whole page in three queries."""
+
+    def by_id(model, ids):
+        ids = {value for value in ids if value}
+        return {row.id: row for row in model.query.filter(model.id.in_(ids)).all()} if ids else {}
+
+    clients = by_id(Client, (inquiry.client_id for inquiry in inquiries))
+    properties = by_id(Property, (inquiry.property_id for inquiry in inquiries))
+    offers = by_id(Offer, (inquiry.offer_id for inquiry in inquiries))
+    return [_serialize(inquiry, clients, properties, offers) for inquiry in inquiries]
+
+
+def _get_or_404(inquiry_id: str):
+    return Inquiry.query.filter_by(id=inquiry_id, agency_id=current_agency_id()).first()
+
+
+@bp.route("/", methods=["GET"])
+def list_inquiries():
+    """Newest first. `?status=new` keeps only the ones nobody opened yet."""
+    query = Inquiry.query.filter_by(agency_id=current_agency_id())
+    if request.args.get("status") == "new":
+        query = query.filter(Inquiry.read_at.is_(None))
+    inquiries = query.order_by(Inquiry.created_at.desc()).limit(200).all()
+    return jsonify(_serialize_many(inquiries))
+
+
+@bp.route("/unread-count", methods=["GET"])
+def unread_count():
+    count = Inquiry.query.filter_by(agency_id=current_agency_id()).filter(Inquiry.read_at.is_(None)).count()
+    return jsonify({"count": count})
+
+
+@bp.route("/<inquiry_id>", methods=["PATCH"])
+def mark_inquiry(inquiry_id):
+    """`{"read": true}` marks it read, `{"read": false}` back to new."""
+    inquiry = _get_or_404(inquiry_id)
+    if inquiry is None:
+        return jsonify({"message": "Not found"}), 404
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body.get("read"), bool):
+        return jsonify({"message": "Validation error", "errors": {"read": ["Debe ser true o false."]}}), 400
+    inquiry.read_at = _now() if body["read"] else None
+    db.session.commit()
+    return jsonify(_serialize_many([inquiry])[0])
+
+
+@bp.route("/read-all", methods=["POST"])
+def mark_all_read():
+    updated = (
+        Inquiry.query.filter_by(agency_id=current_agency_id())
+        .filter(Inquiry.read_at.is_(None))
+        .update({Inquiry.read_at: _now()}, synchronize_session=False)
+    )
+    db.session.commit()
+    return jsonify({"updated": updated})

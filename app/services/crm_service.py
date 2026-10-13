@@ -1,5 +1,5 @@
 from app.extensions import db
-from app.models import Client, Inquiry, Interaction
+from app.models import Client, Inquiry, Interaction, Offer, Property
 from app.services.notifications import notify_new_inquiry
 
 
@@ -98,6 +98,15 @@ def log_inquiry(
         "OFFER": "Respondió a una oferta",
         "GENERAL": "Dejó una consulta",
     }.get(inquiry_type, "Dejó una consulta")
+    # Name what they asked about, so the client's history says which listing or offer.
+    if property_id:
+        prop = db.session.get(Property, property_id)
+        if prop is not None:
+            interaction_label = f"Consultó por «{prop.title}»"
+    elif offer_id:
+        offer = db.session.get(Offer, offer_id)
+        if offer is not None:
+            interaction_label = f"Respondió a la oferta «{offer.title}»"
     db.session.add(
         Interaction(
             client_id=client.id,

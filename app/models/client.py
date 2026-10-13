@@ -57,3 +57,5 @@ class Inquiry(db.Model, TimestampMixin):
     email = db.Column(db.String(200), nullable=False)
     phone = db.Column(db.String(50), nullable=True)
     message = db.Column(db.Text, nullable=True)
+    # When someone on the agency's team opened it in the inbox; null means new.
+    read_at = db.Column(db.DateTime, nullable=True)

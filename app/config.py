@@ -22,3 +22,10 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
+
+    # Transactional email through Resend. Without an API key, emails are only
+    # written to the log, so local development needs no account.
+    RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+    EMAIL_FROM = os.environ.get("EMAIL_FROM", "Tivvo <avisos@tivvo.app>")
+    # Used to build links back to the dashboard inside emails.
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
