@@ -1,6 +1,7 @@
 from app.extensions import db
 from app.models.base import generate_token
 from app.models.booking import Booking
+from app.models.offer import OfferProperty
 from app.models.property import (
     Classification,
     Description,
@@ -12,6 +13,7 @@ from app.models.property import (
     RatePeriod,
 )
 from app.schemas.property import PublicPropertySchema
+from app.utils import trash
 from app.utils.slugify import slugify
 
 
@@ -37,7 +39,7 @@ def _unique_slug(agency_id: str, title: str, *, exclude_id: str | None = None) -
 
 
 def list_properties(agency_id: str, *, status: str | None = None, listing_type: str | None = None):
-    query = Property.query.filter_by(agency_id=agency_id)
+    query = Property.query.filter_by(agency_id=agency_id, deleted_at=None)
     if status:
         query = query.filter_by(status=status)
     if listing_type:
@@ -45,8 +47,11 @@ def list_properties(agency_id: str, *, status: str | None = None, listing_type: 
     return query.order_by(Property.created_at.desc()).all()
 
 
-def get_property(agency_id: str, property_id: str) -> Property:
-    prop = Property.query.filter_by(id=property_id, agency_id=agency_id).first()
+def get_property(agency_id: str, property_id: str, *, trashed: bool = False) -> Property:
+    """A live property, or with trashed=True one in the trash."""
+    query = Property.query.filter_by(id=property_id, agency_id=agency_id)
+    query = query.filter(Property.deleted_at.isnot(None) if trashed else Property.deleted_at.is_(None))
+    prop = query.first()
     if prop is None:
         raise PropertyError("Property not found", 404)
     return prop
@@ -117,8 +122,57 @@ def update_property(agency_id: str, property_id: str, data: dict) -> Property:
 
 
 def delete_property(agency_id: str, property_id: str) -> None:
+    """Moves the property to the trash: off the app and the public site, restorable."""
     prop = get_property(agency_id, property_id)
+    prop.deleted_at = trash.now()
+    db.session.commit()
+
+
+def list_trashed_properties(agency_id: str):
+    purge_trashed_properties(agency_id)
+    return (
+        Property.query.filter(Property.agency_id == agency_id, Property.deleted_at.isnot(None))
+        .order_by(Property.deleted_at.desc())
+        .all()
+    )
+
+
+def restore_property(agency_id: str, property_id: str) -> Property:
+    prop = get_property(agency_id, property_id, trashed=True)
+    prop.deleted_at = None
+    db.session.commit()
+    return prop
+
+
+def _is_referenced(prop: Property) -> bool:
+    """Bookings and offers keep pointing at it, so it can't be deleted for good."""
+    return (
+        Booking.query.filter_by(property_id=prop.id).first() is not None
+        or OfferProperty.query.filter_by(property_id=prop.id).first() is not None
+    )
+
+
+def delete_property_forever(agency_id: str, property_id: str) -> None:
+    prop = get_property(agency_id, property_id, trashed=True)
+    if _is_referenced(prop):
+        raise PropertyError(
+            "No se puede borrar definitivamente: tiene reservas u ofertas. Queda en la papelera.", 409
+        )
     db.session.delete(prop)
+    db.session.commit()
+
+
+def purge_trashed_properties(agency_id: str) -> None:
+    """Deletes for good what has been in the trash longer than TRASH_DAYS,
+    except properties bookings or offers still point at."""
+    expired = Property.query.filter(
+        Property.agency_id == agency_id,
+        Property.deleted_at.isnot(None),
+        Property.deleted_at < trash.purge_cutoff(),
+    ).all()
+    for prop in expired:
+        if not _is_referenced(prop):
+            db.session.delete(prop)
     db.session.commit()
 
 
@@ -207,9 +261,9 @@ def get_owner_by_token(token: str) -> PropertyOwner | None:
 def serialize_owner_portal(owner: PropertyOwner) -> dict:
     public_property_schema = PublicPropertySchema()
     properties = []
-    for prop in owner.properties:
+    for prop in owner.properties.filter(Property.deleted_at.is_(None)):
         bookings = (
-            Booking.query.filter_by(property_id=prop.id)
+            Booking.query.filter_by(property_id=prop.id, deleted_at=None)
             .order_by(Booking.start_date.desc())
             .all()
         )

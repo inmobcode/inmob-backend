@@ -1,7 +1,7 @@
 import secrets
 
 from app.extensions import db
-from app.models.base import TimestampMixin, uuid_pk
+from app.models.base import TimestampMixin, TrashMixin, uuid_pk
 
 BOOKING_STATUSES = ("PENDING", "CONFIRMED", "CANCELLED", "COMPLETED")
 PAYMENT_TYPES = ("DEPOSIT", "BALANCE", "COMMISSION")
@@ -13,7 +13,7 @@ def generate_booking_token() -> str:
     return secrets.token_urlsafe(16)
 
 
-class Booking(db.Model, TimestampMixin):
+class Booking(db.Model, TimestampMixin, TrashMixin):
     __tablename__ = "bookings"
 
     id = uuid_pk()

@@ -69,6 +69,31 @@ def delete_booking(booking_id):
         return jsonify({"message": err.message}), err.status_code
     return "", 204
 
+@bp.route("/trash", methods=["GET"])
+def list_trashed_bookings():
+    """What's in the trash; anything older than TRASH_DAYS is deleted for good first."""
+    items = booking_service.list_trashed_bookings(current_agency_id())
+    return jsonify(bookings_schema.dump(items))
+
+
+@bp.route("/<booking_id>/restore", methods=["POST"])
+def restore_booking(booking_id):
+    try:
+        item = booking_service.restore_booking(current_agency_id(), booking_id)
+    except booking_service.BookingError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(booking_schema.dump(item))
+
+
+@bp.route("/<booking_id>/permanent", methods=["DELETE"])
+def delete_booking_forever(booking_id):
+    try:
+        booking_service.delete_booking_forever(current_agency_id(), booking_id)
+    except booking_service.BookingError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return "", 204
+
+
 
 @bp.route("/<booking_id>/confirm", methods=["POST"])
 def confirm_booking(booking_id):

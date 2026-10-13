@@ -30,6 +30,7 @@ class BookingSchema(Schema):
     commission_amount = fields.Float(data_key="commissionAmount", allow_none=True)
     created_at = fields.DateTime(data_key="createdAt", dump_only=True)
     updated_at = fields.DateTime(data_key="updatedAt", dump_only=True)
+    deleted_at = fields.DateTime(data_key="deletedAt", dump_only=True)
     payments = fields.Nested(PaymentSchema, many=True, dump_only=True)
 
     property_title = fields.Method("get_property_title", data_key="propertyTitle", dump_only=True)

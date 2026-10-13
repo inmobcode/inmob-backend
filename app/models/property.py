@@ -1,6 +1,6 @@
 from app.constants.property_catalogs import ALL_PROPERTY_TYPES
 from app.extensions import db
-from app.models.base import TimestampMixin, generate_token, uuid_pk
+from app.models.base import TimestampMixin, TrashMixin, generate_token, uuid_pk
 
 LISTING_TYPES = ("SALE", "RENT")
 CATEGORIES = ALL_PROPERTY_TYPES
@@ -24,7 +24,7 @@ class PropertyOwner(db.Model, TimestampMixin):
     properties = db.relationship("Property", back_populates="owner", lazy="dynamic")
 
 
-class Property(db.Model, TimestampMixin):
+class Property(db.Model, TimestampMixin, TrashMixin):
     __tablename__ = "properties"
     __table_args__ = (db.UniqueConstraint("agency_id", "slug", name="uq_property_agency_slug"),)
 

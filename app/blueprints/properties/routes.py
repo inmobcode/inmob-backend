@@ -110,6 +110,31 @@ def delete_property(property_id):
         return jsonify({"message": err.message}), err.status_code
     return "", 204
 
+@bp.route("/trash", methods=["GET"])
+def list_trashed_properties():
+    """What's in the trash; anything older than TRASH_DAYS is deleted for good first."""
+    items = property_service.list_trashed_properties(current_agency_id())
+    return jsonify(properties_schema.dump(items))
+
+
+@bp.route("/<property_id>/restore", methods=["POST"])
+def restore_property(property_id):
+    try:
+        item = property_service.restore_property(current_agency_id(), property_id)
+    except property_service.PropertyError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(property_schema.dump(item))
+
+
+@bp.route("/<property_id>/permanent", methods=["DELETE"])
+def delete_property_forever(property_id):
+    try:
+        property_service.delete_property_forever(current_agency_id(), property_id)
+    except property_service.PropertyError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return "", 204
+
+
 
 @bp.route("/<property_id>/publish", methods=["POST"])
 def publish_property(property_id):

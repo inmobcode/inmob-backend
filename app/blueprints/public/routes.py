@@ -32,7 +32,7 @@ def list_public_properties(agency_slug):
     if agency is None:
         return jsonify({"message": "Agency not found"}), 404
 
-    query = Property.query.filter_by(agency_id=agency.id, status="PUBLISHED")
+    query = Property.query.filter_by(agency_id=agency.id, status="PUBLISHED", deleted_at=None)
 
     listing_type = request.args.get("listingType")
     if listing_type:
@@ -74,7 +74,7 @@ def get_public_property(agency_slug, property_slug):
         return jsonify({"message": "Agency not found"}), 404
 
     prop = Property.query.filter_by(
-        agency_id=agency.id, slug=property_slug, status="PUBLISHED"
+        agency_id=agency.id, slug=property_slug, status="PUBLISHED", deleted_at=None
     ).first()
     if prop is None:
         return jsonify({"message": "Property not found"}), 404
@@ -89,7 +89,7 @@ def get_property_ics(agency_slug, property_slug):
         return jsonify({"message": "Agency not found"}), 404
 
     prop = Property.query.filter_by(
-        agency_id=agency.id, slug=property_slug, status="PUBLISHED"
+        agency_id=agency.id, slug=property_slug, status="PUBLISHED", deleted_at=None
     ).first()
     if prop is None:
         return jsonify({"message": "Property not found"}), 404
@@ -111,7 +111,7 @@ def create_inquiry(agency_slug):
 
     property_id = data.get("property_id")
     if property_id:
-        prop = Property.query.filter_by(id=property_id, agency_id=agency.id, status="PUBLISHED").first()
+        prop = Property.query.filter_by(id=property_id, agency_id=agency.id, status="PUBLISHED", deleted_at=None).first()
         if prop is None:
             return jsonify({"message": "Property not found"}), 404
 

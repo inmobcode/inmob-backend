@@ -13,6 +13,13 @@ def generate_token() -> str:
     return secrets.token_urlsafe(8)
 
 
+class TrashMixin:
+    """Deleting moves the record to the trash: it disappears from the app and
+    public pages, can be restored, and is deleted for good after TRASH_DAYS."""
+
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
+
+
 class TimestampMixin:
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = db.Column(

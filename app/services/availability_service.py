@@ -19,7 +19,7 @@ class AvailabilityError(Exception):
 
 
 def _get_property(agency_id: str, property_id: str) -> Property:
-    prop = Property.query.filter_by(id=property_id, agency_id=agency_id).first()
+    prop = Property.query.filter_by(id=property_id, agency_id=agency_id, deleted_at=None).first()
     if prop is None:
         raise AvailabilityError("Property not found", 404)
     return prop

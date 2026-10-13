@@ -64,6 +64,31 @@ def delete_offer(offer_id):
         return jsonify({"message": err.message}), err.status_code
     return "", 204
 
+@bp.route("/trash", methods=["GET"])
+def list_trashed_offers():
+    """What's in the trash; anything older than TRASH_DAYS is deleted for good first."""
+    items = offer_service.list_trashed_offers(current_agency_id())
+    return jsonify([offer_service.serialize_offer(item) for item in items])
+
+
+@bp.route("/<offer_id>/restore", methods=["POST"])
+def restore_offer(offer_id):
+    try:
+        item = offer_service.restore_offer(current_agency_id(), offer_id)
+    except offer_service.OfferError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(offer_service.serialize_offer(item))
+
+
+@bp.route("/<offer_id>/permanent", methods=["DELETE"])
+def delete_offer_forever(offer_id):
+    try:
+        offer_service.delete_offer_forever(current_agency_id(), offer_id)
+    except offer_service.OfferError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return "", 204
+
+
 
 @bp.route("/<offer_id>/send", methods=["POST"])
 def send_offer(offer_id):

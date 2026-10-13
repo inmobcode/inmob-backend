@@ -152,6 +152,7 @@ class PropertySchema(Schema):
     content = fields.Nested(DescriptionSchema, allow_none=True)
     created_at = fields.DateTime(data_key="createdAt", dump_only=True)
     updated_at = fields.DateTime(data_key="updatedAt", dump_only=True)
+    deleted_at = fields.DateTime(data_key="deletedAt", dump_only=True)
 
     def get_agency_slug(self, obj):
         return obj.agency.slug if obj.agency else None

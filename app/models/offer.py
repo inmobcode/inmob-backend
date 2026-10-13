@@ -1,5 +1,5 @@
 from app.extensions import db
-from app.models.base import TimestampMixin, generate_token, uuid_pk
+from app.models.base import TimestampMixin, TrashMixin, generate_token, uuid_pk
 
 OFFER_STATUSES = ("DRAFT", "SENT", "VIEWED", "EXPIRED")
 DISCOUNT_TYPES = ("NONE", "PERCENT", "FIXED")
@@ -7,7 +7,7 @@ DISCOUNT_TYPES = ("NONE", "PERCENT", "FIXED")
 OFFER_OPERATIONS = ("SALE", "RENT", "BOTH")
 
 
-class Offer(db.Model, TimestampMixin):
+class Offer(db.Model, TimestampMixin, TrashMixin):
     __tablename__ = "offers"
 
     id = uuid_pk()

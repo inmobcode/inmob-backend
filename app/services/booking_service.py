@@ -5,6 +5,7 @@ from app.models import Agency, AvailabilityBlock, Booking, Client, Offer, Paymen
 from app.schemas.agency import AgencyPublicSchema
 from app.schemas.property import PublicPropertySchema
 from app.services.notifications import notify_booking
+from app.utils import trash
 
 TERMINAL_STATUSES = ("CANCELLED", "COMPLETED")
 
@@ -18,24 +19,30 @@ class BookingError(Exception):
 
 def _validate_scoped(agency_id: str, model, record_id: str, label: str):
     record = model.query.filter_by(id=record_id, agency_id=agency_id).first()
-    if record is None:
+    # Something in the trash can't be booked or linked.
+    if record is None or getattr(record, "deleted_at", None) is not None:
         raise BookingError(f"{label} not found", 404)
     return record
 
 
 def list_bookings(agency_id: str):
-    return Booking.query.filter_by(agency_id=agency_id).order_by(Booking.created_at.desc()).all()
+    return (
+        Booking.query.filter_by(agency_id=agency_id, deleted_at=None).order_by(Booking.created_at.desc()).all()
+    )
 
 
-def get_booking(agency_id: str, booking_id: str) -> Booking:
-    booking = Booking.query.filter_by(id=booking_id, agency_id=agency_id).first()
+def get_booking(agency_id: str, booking_id: str, *, trashed: bool = False) -> Booking:
+    """A live booking, or with trashed=True one in the trash."""
+    query = Booking.query.filter_by(id=booking_id, agency_id=agency_id)
+    query = query.filter(Booking.deleted_at.isnot(None) if trashed else Booking.deleted_at.is_(None))
+    booking = query.first()
     if booking is None:
         raise BookingError("Booking not found", 404)
     return booking
 
 
 def get_booking_by_token(token: str) -> Booking:
-    booking = Booking.query.filter_by(token=token).first()
+    booking = Booking.query.filter_by(token=token, deleted_at=None).first()
     if booking is None:
         raise BookingError("Booking not found", 404)
     return booking
@@ -119,21 +126,16 @@ def update_booking(agency_id: str, booking_id: str, data: dict) -> Booking:
     return booking
 
 
-def delete_booking(agency_id: str, booking_id: str) -> None:
-    booking = get_booking(agency_id, booking_id)
+def _free_dates(booking: Booking) -> None:
     if booking.availability_block_id:
         block = db.session.get(AvailabilityBlock, booking.availability_block_id)
         if block is not None:
             db.session.delete(block)
-    db.session.delete(booking)
-    db.session.commit()
+        booking.availability_block_id = None
 
 
-def confirm_booking(agency_id: str, booking_id: str) -> Booking:
-    booking = get_booking(agency_id, booking_id)
-    if booking.status != "PENDING":
-        raise BookingError("Only pending bookings can be confirmed", 400)
-
+def _block_dates(booking: Booking) -> None:
+    """A confirmed rental holds its dates in the property's calendar."""
     if booking.property.listing_type == "RENT" and booking.start_date and booking.end_date:
         block = AvailabilityBlock(
             property_id=booking.property_id,
@@ -145,6 +147,59 @@ def confirm_booking(agency_id: str, booking_id: str) -> Booking:
         db.session.flush()
         booking.availability_block_id = block.id
 
+
+def delete_booking(agency_id: str, booking_id: str) -> None:
+    """Moves the booking to the trash and frees its dates in the calendar."""
+    booking = get_booking(agency_id, booking_id)
+    _free_dates(booking)
+    booking.deleted_at = trash.now()
+    db.session.commit()
+
+
+def list_trashed_bookings(agency_id: str):
+    purge_trashed_bookings(agency_id)
+    return (
+        Booking.query.filter(Booking.agency_id == agency_id, Booking.deleted_at.isnot(None))
+        .order_by(Booking.deleted_at.desc())
+        .all()
+    )
+
+
+def restore_booking(agency_id: str, booking_id: str) -> Booking:
+    """Back from the trash; a confirmed one takes its dates in the calendar again."""
+    booking = get_booking(agency_id, booking_id, trashed=True)
+    if booking.property.deleted_at is not None:
+        raise BookingError("Restaurá primero la propiedad: está en la papelera.", 409)
+    booking.deleted_at = None
+    if booking.status == "CONFIRMED":
+        _block_dates(booking)
+    db.session.commit()
+    return booking
+
+
+def delete_booking_forever(agency_id: str, booking_id: str) -> None:
+    booking = get_booking(agency_id, booking_id, trashed=True)
+    db.session.delete(booking)
+    db.session.commit()
+
+
+def purge_trashed_bookings(agency_id: str) -> None:
+    """Deletes for good what has been in the trash longer than TRASH_DAYS."""
+    for booking in Booking.query.filter(
+        Booking.agency_id == agency_id,
+        Booking.deleted_at.isnot(None),
+        Booking.deleted_at < trash.purge_cutoff(),
+    ).all():
+        db.session.delete(booking)
+    db.session.commit()
+
+
+def confirm_booking(agency_id: str, booking_id: str) -> Booking:
+    booking = get_booking(agency_id, booking_id)
+    if booking.status != "PENDING":
+        raise BookingError("Only pending bookings can be confirmed", 400)
+
+    _block_dates(booking)
     booking.status = "CONFIRMED"
     db.session.commit()
     notify_booking(booking, "confirmed")
@@ -156,12 +211,7 @@ def cancel_booking(agency_id: str, booking_id: str) -> Booking:
     if booking.status in TERMINAL_STATUSES:
         raise BookingError("Booking is already closed", 400)
 
-    if booking.availability_block_id:
-        block = db.session.get(AvailabilityBlock, booking.availability_block_id)
-        if block is not None:
-            db.session.delete(block)
-        booking.availability_block_id = None
-
+    _free_dates(booking)
     booking.status = "CANCELLED"
     db.session.commit()
     notify_booking(booking, "cancelled")

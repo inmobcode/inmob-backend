@@ -1,13 +1,14 @@
 from datetime import datetime, timezone
 
 from app.extensions import db
+from app.models.booking import Booking
 from app.models.client import Client, Interaction
 from app.models.offer import Offer, OfferProperty, OfferSection
 from app.models.property import Property
 from app.schemas.property import PropertySchema, PublicPropertySchema
 from app.services import crm_service
 from app.services.notifications import notify_offer_sent
-from app.utils import rich_text
+from app.utils import rich_text, trash
 
 _property_schema = PropertySchema()
 _public_property_schema = PublicPropertySchema()
@@ -105,11 +106,14 @@ def _assign_client(agency_id: str, offer: Offer, client_id: str | None) -> None:
 
 
 def list_offers(agency_id: str):
-    return Offer.query.filter_by(agency_id=agency_id).order_by(Offer.created_at.desc()).all()
+    return Offer.query.filter_by(agency_id=agency_id, deleted_at=None).order_by(Offer.created_at.desc()).all()
 
 
-def get_offer(agency_id: str, offer_id: str) -> Offer:
-    offer = Offer.query.filter_by(id=offer_id, agency_id=agency_id).first()
+def get_offer(agency_id: str, offer_id: str, *, trashed: bool = False) -> Offer:
+    """A live offer, or with trashed=True one in the trash."""
+    query = Offer.query.filter_by(id=offer_id, agency_id=agency_id)
+    query = query.filter(Offer.deleted_at.isnot(None) if trashed else Offer.deleted_at.is_(None))
+    offer = query.first()
     if offer is None:
         raise OfferError("Offer not found", 404)
     return offer
@@ -166,8 +170,47 @@ def update_offer(agency_id: str, offer_id: str, data: dict) -> Offer:
 
 
 def delete_offer(agency_id: str, offer_id: str) -> None:
+    """Moves the offer to the trash; its public link stops working until it's restored."""
     offer = get_offer(agency_id, offer_id)
+    offer.deleted_at = trash.now()
+    db.session.commit()
+
+
+def list_trashed_offers(agency_id: str):
+    purge_trashed_offers(agency_id)
+    return (
+        Offer.query.filter(Offer.agency_id == agency_id, Offer.deleted_at.isnot(None))
+        .order_by(Offer.deleted_at.desc())
+        .all()
+    )
+
+
+def restore_offer(agency_id: str, offer_id: str) -> Offer:
+    offer = get_offer(agency_id, offer_id, trashed=True)
+    offer.deleted_at = None
+    db.session.commit()
+    return offer
+
+
+def _delete_for_good(offer: Offer) -> None:
+    # Bookings made from it stay; they just stop pointing at it.
+    Booking.query.filter_by(offer_id=offer.id).update({"offer_id": None})
     db.session.delete(offer)
+
+
+def delete_offer_forever(agency_id: str, offer_id: str) -> None:
+    _delete_for_good(get_offer(agency_id, offer_id, trashed=True))
+    db.session.commit()
+
+
+def purge_trashed_offers(agency_id: str) -> None:
+    """Deletes for good what has been in the trash longer than TRASH_DAYS."""
+    for offer in Offer.query.filter(
+        Offer.agency_id == agency_id,
+        Offer.deleted_at.isnot(None),
+        Offer.deleted_at < trash.purge_cutoff(),
+    ).all():
+        _delete_for_good(offer)
     db.session.commit()
 
 
@@ -197,7 +240,7 @@ def send_offer(agency_id: str, offer_id: str) -> Offer:
 
 
 def get_offer_by_token(token: str) -> Offer:
-    offer = Offer.query.filter_by(token=token).first()
+    offer = Offer.query.filter_by(token=token, deleted_at=None).first()
     if offer is None or offer.status == "DRAFT":
         raise OfferError("Offer not found", 404)
 
@@ -216,7 +259,7 @@ def create_public_offer_inquiry(token: str, data: dict) -> Offer:
     """Visitor hits "Contact us" on the public offer page — dual-writes into
     the CRM (Client + Interaction + Inquiry), same as a property inquiry
     from the public portal (Phase 4), just tagged to this offer."""
-    offer = Offer.query.filter_by(token=token).first()
+    offer = Offer.query.filter_by(token=token, deleted_at=None).first()
     if offer is None or offer.status == "DRAFT":
         raise OfferError("Offer not found", 404)
     if offer.status == "EXPIRED":
@@ -249,6 +292,9 @@ def serialize_offer(offer: Offer, *, public: bool = False) -> dict:
 
     properties_by_section: dict[str | None, list[OfferProperty]] = {}
     for offer_property in offer.offer_properties:
+        # The client doesn't see properties the agency moved to the trash.
+        if public and offer_property.property.deleted_at is not None:
+            continue
         properties_by_section.setdefault(offer_property.section_id, []).append(offer_property)
 
     all_display_prices: list[float] = []
@@ -334,5 +380,6 @@ def serialize_offer(offer: Offer, *, public: bool = False) -> dict:
     if not public:
         data["agencyId"] = offer.agency_id
         data["clientId"] = offer.client_id
+        data["deletedAt"] = offer.deleted_at.isoformat() if offer.deleted_at else None
 
     return data
