@@ -52,6 +52,7 @@ def register_blueprints(app: Flask) -> None:
     from app.blueprints.payments import bp as payments_bp
     from app.blueprints.properties import bp as properties_bp
     from app.blueprints.public import bp as public_bp
+    from app.blueprints.service_library import bp as service_library_bp
     from app.blueprints.team import bp as team_bp
 
     for bp in (
@@ -67,5 +68,6 @@ def register_blueprints(app: Flask) -> None:
         inquiries_bp,
         team_bp,
         public_bp,
+        service_library_bp,
     ):
         app.register_blueprint(bp)

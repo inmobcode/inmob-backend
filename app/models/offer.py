@@ -50,6 +50,12 @@ class Offer(db.Model, TimestampMixin, TrashMixin):
         order_by="OfferProperty.position",
         cascade="all, delete-orphan",
     )
+    offer_services = db.relationship(
+        "OfferService",
+        back_populates="offer",
+        order_by="OfferService.position",
+        cascade="all, delete-orphan",
+    )
 
 
 class OfferSection(db.Model, TimestampMixin):
@@ -88,3 +94,31 @@ class OfferProperty(db.Model, TimestampMixin):
     offer = db.relationship("Offer", back_populates="offer_properties")
     section = db.relationship("OfferSection", back_populates="offer_properties")
     property = db.relationship("Property")
+
+
+class OfferService(db.Model, TimestampMixin):
+    """A service added to an offer. It keeps its own copy of what the client
+    sees (name, description, photo, price), so editing or deleting the
+    library entry later doesn't change an offer already sent."""
+
+    __tablename__ = "offer_services"
+
+    id = uuid_pk()
+    offer_id = db.Column(db.String(36), db.ForeignKey("offers.id"), nullable=False, index=True)
+    service_id = db.Column(
+        db.String(36), db.ForeignKey("services.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    position = db.Column(db.Integer, nullable=False, default=0)
+
+    name = db.Column(db.String(200), nullable=False)
+    type = db.Column(db.String(20), nullable=False, default="OTHER")
+    description = db.Column(db.Text, nullable=True)
+    image_url = db.Column(db.String(500), nullable=True)
+    unit = db.Column(db.String(10), nullable=False, default="SERVICE")
+    # Null: "a consultar".
+    unit_price = db.Column(db.Float, nullable=True)
+    quantity = db.Column(db.Integer, nullable=False, default=1)
+    date = db.Column(db.Date, nullable=True)
+    note = db.Column(db.String(500), nullable=True)
+
+    offer = db.relationship("Offer", back_populates="offer_services")

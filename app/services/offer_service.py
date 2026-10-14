@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from app.extensions import db
 from app.models.booking import Booking
 from app.models.client import Client, Interaction
-from app.models.offer import Offer, OfferProperty, OfferSection
+from app.models.offer import Offer, OfferProperty, OfferSection, OfferService
+from app.models.service import Service
 from app.models.property import Property
 from app.schemas.property import PropertySchema, PublicPropertySchema
 from app.services import crm_service
@@ -105,6 +106,65 @@ def _assign_client(agency_id: str, offer: Offer, client_id: str | None) -> None:
     offer.client_phone = client.phone
 
 
+def _sync_services(agency_id: str, offer: Offer, items: list[dict]) -> None:
+    """Replaces the offer's services with the ones sent, in order. Each keeps
+    the copy the editor sent; the link to the library is kept only when that
+    service is this agency's."""
+    offer.offer_services.clear()
+    ids = {item["service_id"] for item in items if item.get("service_id")}
+    own = (
+        {service.id for service in Service.query.filter(Service.agency_id == agency_id, Service.id.in_(ids)).all()}
+        if ids
+        else set()
+    )
+    for position, item in enumerate(items):
+        offer.offer_services.append(
+            OfferService(
+                service_id=item.get("service_id") if item.get("service_id") in own else None,
+                position=position,
+                name=item["name"],
+                type=item.get("type", "OTHER"),
+                description=item.get("description"),
+                image_url=item.get("image_url"),
+                unit=item.get("unit", "SERVICE"),
+                unit_price=item.get("unit_price"),
+                quantity=item.get("quantity", 1),
+                date=item.get("date"),
+                note=item.get("note"),
+            )
+        )
+
+
+def _serialize_services(offer: Offer, *, public: bool) -> tuple[list[dict], float | None]:
+    """The offer's services and what they add up to (only when prices are shown)."""
+    payload = []
+    total = 0.0
+    priced = False
+    for item in offer.offer_services:
+        line = item.unit_price * item.quantity if item.unit_price is not None else None
+        if line is not None:
+            total += line
+            priced = True
+        entry = {
+            "id": item.id,
+            "name": item.name,
+            "type": item.type,
+            "description": item.description,
+            "imageUrl": item.image_url,
+            "unit": item.unit,
+            "quantity": item.quantity,
+            "date": item.date.isoformat() if item.date else None,
+            "note": item.note,
+            "unitPrice": item.unit_price if (offer.show_price or not public) else None,
+            "total": line if (offer.show_price or not public) else None,
+        }
+        if not public:
+            entry["serviceId"] = item.service_id
+        payload.append(entry)
+    shown_total = total if priced and (offer.show_price or not public) else None
+    return payload, shown_total
+
+
 def list_offers(agency_id: str):
     return Offer.query.filter_by(agency_id=agency_id, deleted_at=None).order_by(Offer.created_at.desc()).all()
 
@@ -141,6 +201,7 @@ def create_offer(agency_id: str, created_by: str, data: dict) -> Offer:
     if data.get("client_id"):
         _assign_client(agency_id, offer, data["client_id"])
     _sync_sections(agency_id, offer, data.get("sections", []))
+    _sync_services(agency_id, offer, data.get("services", []))
     db.session.commit()
     return offer
 
@@ -149,6 +210,7 @@ def update_offer(agency_id: str, offer_id: str, data: dict) -> Offer:
     offer = get_offer(agency_id, offer_id)
 
     sections = data.pop("sections", None)
+    services = data.pop("services", None)
     if "client_id" in data:
         _assign_client(agency_id, offer, data.pop("client_id"))
     if "expires_at" in data:
@@ -159,6 +221,8 @@ def update_offer(agency_id: str, offer_id: str, data: dict) -> Offer:
     for field, value in data.items():
         setattr(offer, field, value)
 
+    if services is not None:
+        _sync_services(agency_id, offer, services)
     if sections is not None:
         _sync_sections(agency_id, offer, sections)
     elif "operation" in data:
@@ -354,6 +418,8 @@ def serialize_offer(offer: Offer, *, public: bool = False) -> dict:
             }
         )
 
+    services_payload, services_total = _serialize_services(offer, public=public)
+
     data = {
         "id": offer.id,
         "token": offer.token,
@@ -373,6 +439,8 @@ def serialize_offer(offer: Offer, *, public: bool = False) -> dict:
         "clientPhone": offer.client_phone,
         "sections": sections_payload,
         "total": sum(all_display_prices) if all_display_prices else None,
+        "services": services_payload,
+        "servicesTotal": services_total,
         "createdAt": offer.created_at.isoformat(),
         "updatedAt": offer.updated_at.isoformat(),
     }

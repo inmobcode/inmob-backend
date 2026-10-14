@@ -1,6 +1,7 @@
 from marshmallow import Schema, fields, validate
 
 from app.models.offer import DISCOUNT_TYPES, OFFER_OPERATIONS
+from app.schemas.service import OfferServiceItemSchema
 
 
 class OfferPropertyItemSchema(Schema):
@@ -38,6 +39,7 @@ class OfferCreateSchema(Schema):
     client_email = fields.Email(data_key="clientEmail", allow_none=True)
     client_phone = fields.Str(data_key="clientPhone", allow_none=True, validate=validate.Length(max=50))
     sections = fields.List(fields.Nested(OfferSectionItemSchema), load_default=list)
+    services = fields.List(fields.Nested(OfferServiceItemSchema), load_default=list, validate=validate.Length(max=40))
 
 
 class OfferUpdateSchema(Schema):
@@ -58,6 +60,7 @@ class OfferUpdateSchema(Schema):
     client_email = fields.Email(data_key="clientEmail", allow_none=True)
     client_phone = fields.Str(data_key="clientPhone", allow_none=True, validate=validate.Length(max=50))
     sections = fields.List(fields.Nested(OfferSectionItemSchema))
+    services = fields.List(fields.Nested(OfferServiceItemSchema), validate=validate.Length(max=40))
 
 
 class PublicOfferInquirySchema(Schema):
