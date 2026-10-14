@@ -7,7 +7,7 @@ from app.utils import rich_text
 SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 HEX_COLOR_RE = r"^#[0-9a-fA-F]{6}$"
 
-SITE_TEMPLATES = ("portada", "editorial", "compacto")
+SITE_TEMPLATES = ("portada", "editorial", "compacto", "dividido", "mosaico")
 SITE_SECTION_TYPES = ("location", "promo", "featured", "destinations", "text", "cta")
 # Every layout any block can use; the frontend offers the ones that fit each type
 # and falls back to the type's first layout for anything else.
@@ -26,7 +26,7 @@ SITE_SECTION_LAYOUTS = (
 )
 SITE_BUTTON_TARGETS = ("contact", "whatsapp", "properties")
 ISO_DATE_RE = r"^\d{4}-\d{2}-\d{2}$"
-SITE_FONTS = ("moderna", "clasica", "sobria")
+SITE_FONTS = ("moderna", "clasica", "sobria", "elegante", "editorial", "calida", "urbana", "arquitectonica")
 
 
 def _validate_slug(value: str) -> None:
@@ -104,11 +104,17 @@ class SiteSettingsSchema(Schema):
     the frontend fills in anything missing with its defaults."""
 
     template = fields.Str(validate=validate.OneOf(SITE_TEMPLATES))
+    # A different layout on phones; null means the same one as on desktop.
+    template_mobile = fields.Str(data_key="templateMobile", allow_none=True, validate=validate.OneOf(SITE_TEMPLATES))
     accent = fields.Str(validate=validate.Regexp(HEX_COLOR_RE, error="Color inválido"))
     fonts = fields.Str(validate=validate.OneOf(SITE_FONTS))
     hero_title = fields.Str(data_key="heroTitle", allow_none=True, validate=validate.Length(max=120))
     hero_subtitle = fields.Str(data_key="heroSubtitle", allow_none=True, validate=validate.Length(max=240))
     cover_url = fields.Str(data_key="coverUrl", allow_none=True, validate=validate.Length(max=500))
+    # The "mosaico" layout's collage, in order; empty uses the listings' cover photos.
+    mosaic_photos = fields.List(
+        fields.Str(validate=validate.Length(max=500)), data_key="mosaicPhotos", validate=validate.Length(max=4)
+    )
     # Formatted text (see app/utils/rich_text.py); room for the markup.
     about = fields.Str(allow_none=True, validate=validate.Length(max=10000))
     show_about = fields.Bool(data_key="showAbout")
