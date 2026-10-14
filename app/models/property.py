@@ -122,7 +122,8 @@ class PropertyPhoto(db.Model, TimestampMixin):
     url = db.Column(db.String(1000), nullable=False)
     position = db.Column(db.Integer, nullable=False, default=0)
     is_cover = db.Column(db.Boolean, nullable=False, default=False)
-    section = db.Column(db.String(20), nullable=False, default="GENERAL")
+    # Wide enough for a free-form custom section name, not just the fixed catalog tokens.
+    section = db.Column(db.String(60), nullable=False, default="GENERAL")
     section_detail = db.Column(db.String(255), nullable=True)  # bedroom number, or "added facilities" text
 
     property = db.relationship("Property", back_populates="photos")

@@ -235,6 +235,36 @@ def remove_photo(agency_id: str, property_id: str, photo_id: str) -> Property:
     return prop
 
 
+def update_photo(agency_id: str, property_id: str, photo_id: str, data: dict) -> Property:
+    prop = get_property(agency_id, property_id)
+    photo = next((p for p in prop.photos if p.id == photo_id), None)
+    if photo is None:
+        raise PropertyError("Photo not found", 404)
+
+    if data.get("is_cover"):
+        for existing in prop.photos:
+            existing.is_cover = existing.id == photo_id
+    for field in ("section", "section_detail"):
+        if field in data:
+            setattr(photo, field, data[field])
+
+    db.session.commit()
+    return prop
+
+
+def reorder_photos(agency_id: str, property_id: str, photo_ids: list[str]) -> Property:
+    prop = get_property(agency_id, property_id)
+    by_id = {photo.id: photo for photo in prop.photos}
+    if set(photo_ids) != set(by_id):
+        raise PropertyError("photoIds must list every photo exactly once", 400)
+
+    for position, photo_id in enumerate(photo_ids):
+        by_id[photo_id].position = position
+
+    db.session.commit()
+    return prop
+
+
 def list_owners(agency_id: str):
     return PropertyOwner.query.filter_by(agency_id=agency_id).order_by(PropertyOwner.name).all()
 
@@ -294,6 +324,19 @@ def serialize_owner_portal(owner: PropertyOwner) -> dict:
                         ],
                     }
                     for booking in bookings
+                ],
+                "recommendations": [
+                    {
+                        "id": rec.id,
+                        "title": rec.title,
+                        "details": rec.details,
+                        "priority": rec.priority,
+                        "estCost": rec.est_cost,
+                        "pdfUrl": rec.pdf_url,
+                        "status": rec.status,
+                        "createdAt": rec.created_at.isoformat() if rec.created_at else None,
+                    }
+                    for rec in prop.recommendations
                 ],
             }
         )

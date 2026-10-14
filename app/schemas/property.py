@@ -3,7 +3,6 @@ from marshmallow import Schema, fields, post_dump, post_load, validate
 from app.constants.property_catalogs import (
     ENERGY_CERTIFICATE_OPTIONS,
     LOCATION_CATEGORY_OPTIONS,
-    PHOTO_SECTIONS,
 )
 from app.models.property import CATEGORIES, LISTING_TYPES
 from app.utils import rich_text
@@ -23,7 +22,14 @@ class PropertyPhotoSchema(Schema):
     url = fields.Str(required=True, validate=validate.Length(max=1000))
     position = fields.Int(load_default=0)
     is_cover = fields.Bool(data_key="isCover", load_default=False)
-    section = fields.Str(load_default="GENERAL", validate=validate.OneOf(PHOTO_SECTIONS))
+    # Not restricted to the fixed catalog: agents can name their own sections too.
+    section = fields.Str(load_default="GENERAL", validate=validate.Length(min=1, max=60))
+    section_detail = fields.Str(data_key="sectionDetail", allow_none=True)
+
+
+class PropertyPhotoUpdateSchema(Schema):
+    is_cover = fields.Bool(data_key="isCover")
+    section = fields.Str(validate=validate.Length(min=1, max=60))
     section_detail = fields.Str(data_key="sectionDetail", allow_none=True)
 
 

@@ -8,6 +8,7 @@ from app.schemas.property import (
     PropertyCreateSchema,
     PropertyOwnerSchema,
     PropertyPhotoSchema,
+    PropertyPhotoUpdateSchema,
     PropertySchema,
     PropertyUpdateSchema,
 )
@@ -215,6 +216,31 @@ def add_photo(property_id):
 def remove_photo(property_id, photo_id):
     try:
         prop = property_service.remove_photo(current_agency_id(), property_id, photo_id)
+    except property_service.PropertyError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(property_schema.dump(prop))
+
+
+@bp.route("/<property_id>/photos/<photo_id>", methods=["PATCH"])
+def update_photo(property_id, photo_id):
+    data, error = _load_json(PropertyPhotoUpdateSchema(), partial=True)
+    if error:
+        return error
+    try:
+        prop = property_service.update_photo(current_agency_id(), property_id, photo_id, data)
+    except property_service.PropertyError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(property_schema.dump(prop))
+
+
+@bp.route("/<property_id>/photos/order", methods=["PUT"])
+def reorder_photos(property_id):
+    data = request.get_json(silent=True) or {}
+    photo_ids = data.get("photoIds")
+    if not isinstance(photo_ids, list) or not all(isinstance(item, str) for item in photo_ids):
+        return jsonify({"message": "Validation error", "errors": {"photoIds": ["Required"]}}), 400
+    try:
+        prop = property_service.reorder_photos(current_agency_id(), property_id, photo_ids)
     except property_service.PropertyError as err:
         return jsonify({"message": err.message}), err.status_code
     return jsonify(property_schema.dump(prop))

@@ -139,7 +139,7 @@ def _long_date(day) -> str:
 
 
 def booking_url(booking: Booking) -> str:
-    return f"{current_app.config['FRONTEND_URL'].rstrip('/')}/booking/{booking.token}"
+    return f"{current_app.config['PUBLIC_SITE_URL'].rstrip('/')}/booking/{booking.token}"
 
 
 def notify_booking(booking: Booking, event: str) -> None:
@@ -184,7 +184,7 @@ def notify_offer_sent(offer: Offer) -> None:
     if client is None or not client.email:
         return
     agency = db.session.get(Agency, offer.agency_id)
-    url = f"{current_app.config['FRONTEND_URL'].rstrip('/')}/offer/{offer.token}"
+    url = f"{current_app.config['PUBLIC_SITE_URL'].rstrip('/')}/offer/{offer.token}"
     first_name = client.name.split()[0] if client.name.strip() else ""
     # Stored already clean; sanitize also turns older plain text into paragraphs.
     welcome = rich_text.sanitize(offer.welcome_content) or ""

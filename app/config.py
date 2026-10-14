@@ -21,11 +21,17 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
+    CORS_ORIGINS = os.environ.get(
+        "CORS_ORIGINS", "http://localhost:3000,http://app.localhost:3000"
+    ).split(",")
 
     # Transactional email through Resend. Without an API key, emails are only
     # written to the log, so local development needs no account.
     RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
     EMAIL_FROM = os.environ.get("EMAIL_FROM", "Tivvo <avisos@tivvo.app>")
-    # Used to build links back to the dashboard inside emails.
-    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    # The dashboard itself: used to build login/inbox links inside emails.
+    # It lives on the app subdomain (see frontend/src/proxy.ts).
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://app.localhost:3000")
+    # Client-facing pages (booking/offer links, the agency's public site) live
+    # on the apex domain instead — never the app subdomain above.
+    PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "http://localhost:3000")
