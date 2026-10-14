@@ -15,6 +15,8 @@ class ServiceSchema(Schema):
     currency = fields.Str(load_default="USD", validate=validate.Length(equal=3))
     unit = fields.Str(load_default="SERVICE", validate=validate.OneOf(SERVICE_UNITS))
     active = fields.Bool(load_default=True)
+    reservation_policy = fields.Str(data_key="reservationPolicy", allow_none=True, validate=validate.Length(max=4000))
+    cancellation_policy = fields.Str(data_key="cancellationPolicy", allow_none=True, validate=validate.Length(max=4000))
     created_at = fields.DateTime(data_key="createdAt", dump_only=True)
     updated_at = fields.DateTime(data_key="updatedAt", dump_only=True)
 

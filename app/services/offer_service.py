@@ -204,6 +204,7 @@ def create_offer(agency_id: str, created_by: str, data: dict) -> Offer:
         agency_id=agency_id,
         created_by=created_by,
         title=data["title"],
+        reference_code=data.get("reference_code"),
         operation=data.get("operation", "BOTH"),
         currency=data.get("currency", "USD"),
         show_price=data.get("show_price", True),
@@ -469,6 +470,7 @@ def serialize_offer(offer: Offer, *, public: bool = False) -> dict:
     if not public:
         data["agencyId"] = offer.agency_id
         data["clientId"] = offer.client_id
+        data["referenceCode"] = offer.reference_code
         data["deletedAt"] = offer.deleted_at.isoformat() if offer.deleted_at else None
 
     return data

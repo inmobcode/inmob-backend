@@ -17,6 +17,8 @@ class Offer(db.Model, TimestampMixin, TrashMixin):
 
     token = db.Column(db.String(32), nullable=False, unique=True, index=True, default=generate_token)
     title = db.Column(db.String(200), nullable=False)
+    # The agency's own tracking code (e.g. matching an external CRM or spreadsheet). Optional, free text.
+    reference_code = db.Column(db.String(100), nullable=True)
     operation = db.Column(db.String(4), nullable=False, default="BOTH", server_default="BOTH")
     currency = db.Column(db.String(3), nullable=False, default="USD")
     show_price = db.Column(db.Boolean, nullable=False, default=True)

@@ -23,6 +23,7 @@ class OfferSectionItemSchema(Schema):
 
 class OfferCreateSchema(Schema):
     title = fields.Str(required=True, validate=validate.Length(min=2, max=200))
+    reference_code = fields.Str(data_key="referenceCode", allow_none=True, validate=validate.Length(max=100))
     operation = fields.Str(load_default="BOTH", validate=validate.OneOf(OFFER_OPERATIONS))
     currency = fields.Str(load_default="USD", validate=validate.Length(equal=3))
     show_price = fields.Bool(data_key="showPrice", load_default=True)
@@ -44,6 +45,7 @@ class OfferCreateSchema(Schema):
 
 class OfferUpdateSchema(Schema):
     title = fields.Str(validate=validate.Length(min=2, max=200))
+    reference_code = fields.Str(data_key="referenceCode", allow_none=True, validate=validate.Length(max=100))
     operation = fields.Str(validate=validate.OneOf(OFFER_OPERATIONS))
     currency = fields.Str(validate=validate.Length(equal=3))
     show_price = fields.Bool(data_key="showPrice")

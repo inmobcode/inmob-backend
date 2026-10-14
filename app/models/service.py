@@ -39,3 +39,5 @@ class Service(db.Model, TimestampMixin):
     unit = db.Column(db.String(10), nullable=False, default="SERVICE")
     # Inactive services stay in the library but can't be added to offers.
     active = db.Column(db.Boolean, nullable=False, default=True)
+    reservation_policy = db.Column(db.Text, nullable=True)
+    cancellation_policy = db.Column(db.Text, nullable=True)
