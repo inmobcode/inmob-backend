@@ -40,7 +40,11 @@ def _get_client() -> Client:
 def _upload(bucket: str, path: str, content: bytes, content_type: str, kind: str) -> str:
     client = _get_client()
     try:
-        client.storage.from_(bucket).upload(path, content, {"content-type": content_type})
+        # Every path ends in a fresh uuid, so a stored file never changes:
+        # browsers can keep it for a year instead of revalidating hourly.
+        client.storage.from_(bucket).upload(
+            path, content, {"content-type": content_type, "cache-control": "31536000"}
+        )
     except Exception as err:  # storage3 raises its own StorageApiError subclasses
         raise StorageError(f"Could not upload {kind}: {err}", 502)
     return client.storage.from_(bucket).get_public_url(path)

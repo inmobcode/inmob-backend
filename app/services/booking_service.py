@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 
+from sqlalchemy.orm import joinedload, selectinload
+
 from app.extensions import db
 from app.models import Agency, AvailabilityBlock, Booking, Client, Offer, Payment, Property
 from app.schemas.agency import AgencyPublicSchema
@@ -25,15 +27,28 @@ def _validate_scoped(agency_id: str, model, record_id: str, label: str):
     return record
 
 
+def _booking_load_options():
+    """The property (with its photos), client and payments every booking
+    serializer reads, instead of one query each per booking."""
+    return (
+        joinedload(Booking.property).selectinload(Property.photos),
+        joinedload(Booking.client),
+        selectinload(Booking.payments),
+    )
+
+
 def list_bookings(agency_id: str):
     return (
-        Booking.query.filter_by(agency_id=agency_id, deleted_at=None).order_by(Booking.created_at.desc()).all()
+        Booking.query.options(*_booking_load_options())
+        .filter_by(agency_id=agency_id, deleted_at=None)
+        .order_by(Booking.created_at.desc())
+        .all()
     )
 
 
 def get_booking(agency_id: str, booking_id: str, *, trashed: bool = False) -> Booking:
     """A live booking, or with trashed=True one in the trash."""
-    query = Booking.query.filter_by(id=booking_id, agency_id=agency_id)
+    query = Booking.query.options(*_booking_load_options()).filter_by(id=booking_id, agency_id=agency_id)
     query = query.filter(Booking.deleted_at.isnot(None) if trashed else Booking.deleted_at.is_(None))
     booking = query.first()
     if booking is None:

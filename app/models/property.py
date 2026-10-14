@@ -30,10 +30,10 @@ class Property(db.Model, TimestampMixin, TrashMixin):
 
     id = uuid_pk()
     agency_id = db.Column(db.String(36), db.ForeignKey("agencies.id"), nullable=False, index=True)
-    owner_id = db.Column(db.String(36), db.ForeignKey("property_owners.id"), nullable=True)
+    owner_id = db.Column(db.String(36), db.ForeignKey("property_owners.id"), nullable=True, index=True)
     created_by = db.Column(db.String(36), db.ForeignKey("users.id"), nullable=True)
     # Set when this property is a hotel room: points at the parent HOTEL property.
-    parent_property_id = db.Column(db.String(36), db.ForeignKey("properties.id"), nullable=True)
+    parent_property_id = db.Column(db.String(36), db.ForeignKey("properties.id"), nullable=True, index=True)
 
     title = db.Column(db.String(200), nullable=False)
     slug = db.Column(db.String(220), nullable=False)

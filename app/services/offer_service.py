@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from sqlalchemy.orm import selectinload
+
 from app.extensions import db
 from app.models.booking import Booking
 from app.models.client import Client, Interaction
@@ -8,6 +10,7 @@ from app.models.service import Service
 from app.models.property import Property
 from app.schemas.property import PropertySchema, PublicPropertySchema
 from app.services import crm_service
+from app.services.property_service import property_load_options
 from app.services.notifications import notify_offer_sent
 from app.utils import rich_text, trash
 
@@ -165,13 +168,30 @@ def _serialize_services(offer: Offer, *, public: bool) -> tuple[list[dict], floa
     return payload, shown_total
 
 
+def _offer_load_options():
+    """Everything serialize_offer reads, in a handful of queries instead of
+    several per property in the offer."""
+    return (
+        selectinload(Offer.sections),
+        selectinload(Offer.offer_services),
+        selectinload(Offer.offer_properties)
+        .joinedload(OfferProperty.property)
+        .options(*property_load_options()),
+    )
+
+
 def list_offers(agency_id: str):
-    return Offer.query.filter_by(agency_id=agency_id, deleted_at=None).order_by(Offer.created_at.desc()).all()
+    return (
+        Offer.query.options(*_offer_load_options())
+        .filter_by(agency_id=agency_id, deleted_at=None)
+        .order_by(Offer.created_at.desc())
+        .all()
+    )
 
 
 def get_offer(agency_id: str, offer_id: str, *, trashed: bool = False) -> Offer:
     """A live offer, or with trashed=True one in the trash."""
-    query = Offer.query.filter_by(id=offer_id, agency_id=agency_id)
+    query = Offer.query.options(*_offer_load_options()).filter_by(id=offer_id, agency_id=agency_id)
     query = query.filter(Offer.deleted_at.isnot(None) if trashed else Offer.deleted_at.is_(None))
     offer = query.first()
     if offer is None:
@@ -243,7 +263,8 @@ def delete_offer(agency_id: str, offer_id: str) -> None:
 def list_trashed_offers(agency_id: str):
     purge_trashed_offers(agency_id)
     return (
-        Offer.query.filter(Offer.agency_id == agency_id, Offer.deleted_at.isnot(None))
+        Offer.query.options(*_offer_load_options())
+        .filter(Offer.agency_id == agency_id, Offer.deleted_at.isnot(None))
         .order_by(Offer.deleted_at.desc())
         .all()
     )
@@ -304,7 +325,7 @@ def send_offer(agency_id: str, offer_id: str) -> Offer:
 
 
 def get_offer_by_token(token: str) -> Offer:
-    offer = Offer.query.filter_by(token=token, deleted_at=None).first()
+    offer = Offer.query.options(*_offer_load_options()).filter_by(token=token, deleted_at=None).first()
     if offer is None or offer.status == "DRAFT":
         raise OfferError("Offer not found", 404)
 

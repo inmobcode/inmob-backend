@@ -1,3 +1,5 @@
+from sqlalchemy.orm import joinedload, selectinload
+
 from app.extensions import db
 from app.models.base import generate_token
 from app.models.booking import Booking
@@ -39,8 +41,21 @@ def _unique_slug(agency_id: str, title: str, *, exclude_id: str | None = None) -
         slug = f"{base}-{suffix}"
 
 
+def property_load_options():
+    """Everything PropertySchema reads, fetched with the property instead of
+    one query per relationship per property (each query is a round trip to
+    the database)."""
+    return (
+        joinedload(Property.agency),
+        joinedload(Property.owner),
+        joinedload(Property.classification),
+        joinedload(Property.content),
+        selectinload(Property.photos),
+    )
+
+
 def list_properties(agency_id: str, *, status: str | None = None, listing_type: str | None = None):
-    query = Property.query.filter_by(agency_id=agency_id, deleted_at=None)
+    query = Property.query.options(*property_load_options()).filter_by(agency_id=agency_id, deleted_at=None)
     if status:
         query = query.filter_by(status=status)
     if listing_type:
@@ -50,7 +65,7 @@ def list_properties(agency_id: str, *, status: str | None = None, listing_type: 
 
 def get_property(agency_id: str, property_id: str, *, trashed: bool = False) -> Property:
     """A live property, or with trashed=True one in the trash."""
-    query = Property.query.filter_by(id=property_id, agency_id=agency_id)
+    query = Property.query.options(*property_load_options()).filter_by(id=property_id, agency_id=agency_id)
     query = query.filter(Property.deleted_at.isnot(None) if trashed else Property.deleted_at.is_(None))
     prop = query.first()
     if prop is None:
@@ -132,7 +147,8 @@ def delete_property(agency_id: str, property_id: str) -> None:
 def list_trashed_properties(agency_id: str):
     purge_trashed_properties(agency_id)
     return (
-        Property.query.filter(Property.agency_id == agency_id, Property.deleted_at.isnot(None))
+        Property.query.options(*property_load_options())
+        .filter(Property.agency_id == agency_id, Property.deleted_at.isnot(None))
         .order_by(Property.deleted_at.desc())
         .all()
     )

@@ -32,7 +32,9 @@ def list_public_properties(agency_slug):
     if agency is None:
         return jsonify({"message": "Agency not found"}), 404
 
-    query = Property.query.filter_by(agency_id=agency.id, status="PUBLISHED", deleted_at=None)
+    query = Property.query.options(*property_service.property_load_options()).filter_by(
+        agency_id=agency.id, status="PUBLISHED", deleted_at=None
+    )
 
     listing_type = request.args.get("listingType")
     if listing_type:
@@ -73,9 +75,11 @@ def get_public_property(agency_slug, property_slug):
     if agency is None:
         return jsonify({"message": "Agency not found"}), 404
 
-    prop = Property.query.filter_by(
-        agency_id=agency.id, slug=property_slug, status="PUBLISHED", deleted_at=None
-    ).first()
+    prop = (
+        Property.query.options(*property_service.property_load_options())
+        .filter_by(agency_id=agency.id, slug=property_slug, status="PUBLISHED", deleted_at=None)
+        .first()
+    )
     if prop is None:
         return jsonify({"message": "Property not found"}), 404
 
