@@ -9,10 +9,11 @@ from app.models.offer import Offer, OfferProperty, OfferSection, OfferService
 from app.models.service import Service
 from app.models.property import Property
 from app.schemas.property import PropertySchema, PublicPropertySchema
-from app.services import crm_service
+from app.services import crm_service, feed
 from app.services.property_service import property_load_options
 from app.services.notifications import notify_offer_sent
 from app.utils import rich_text, trash
+from app.utils.tenancy import agent_scope
 
 _property_schema = PropertySchema()
 _public_property_schema = PublicPropertySchema()
@@ -180,10 +181,15 @@ def _offer_load_options():
     )
 
 
+def _own_offers(query):
+    """An AGENT sees only the offers they made."""
+    scope = agent_scope()
+    return query.filter(Offer.created_by == scope) if scope else query
+
+
 def list_offers(agency_id: str):
     return (
-        Offer.query.options(*_offer_load_options())
-        .filter_by(agency_id=agency_id, deleted_at=None)
+        _own_offers(Offer.query.options(*_offer_load_options()).filter_by(agency_id=agency_id, deleted_at=None))
         .order_by(Offer.created_at.desc())
         .all()
     )
@@ -191,7 +197,7 @@ def list_offers(agency_id: str):
 
 def get_offer(agency_id: str, offer_id: str, *, trashed: bool = False) -> Offer:
     """A live offer, or with trashed=True one in the trash."""
-    query = Offer.query.options(*_offer_load_options()).filter_by(id=offer_id, agency_id=agency_id)
+    query = _own_offers(Offer.query.options(*_offer_load_options()).filter_by(id=offer_id, agency_id=agency_id))
     query = query.filter(Offer.deleted_at.isnot(None) if trashed else Offer.deleted_at.is_(None))
     offer = query.first()
     if offer is None:
@@ -264,8 +270,11 @@ def delete_offer(agency_id: str, offer_id: str) -> None:
 def list_trashed_offers(agency_id: str):
     purge_trashed_offers(agency_id)
     return (
-        Offer.query.options(*_offer_load_options())
-        .filter(Offer.agency_id == agency_id, Offer.deleted_at.isnot(None))
+        _own_offers(
+            Offer.query.options(*_offer_load_options()).filter(
+                Offer.agency_id == agency_id, Offer.deleted_at.isnot(None)
+            )
+        )
         .order_by(Offer.deleted_at.desc())
         .all()
     )
@@ -337,6 +346,7 @@ def get_offer_by_token(token: str) -> Offer:
     elif offer.status == "SENT":
         offer.status = "VIEWED"
         db.session.commit()
+        feed.notify_offer_viewed(offer)
 
     return offer
 

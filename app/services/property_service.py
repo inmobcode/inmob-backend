@@ -18,6 +18,7 @@ from app.schemas.agency import AgencyPublicSchema
 from app.schemas.property import PublicPropertySchema
 from app.utils import trash
 from app.utils.slugify import slugify
+from app.utils.tenancy import agent_scope, is_member
 
 
 class PropertyError(Exception):
@@ -54,8 +55,16 @@ def property_load_options():
     )
 
 
+def _own_properties(query):
+    """An AGENT sees only the properties assigned to them."""
+    scope = agent_scope()
+    return query.filter(Property.assigned_agent_id == scope) if scope else query
+
+
 def list_properties(agency_id: str, *, status: str | None = None, listing_type: str | None = None):
-    query = Property.query.options(*property_load_options()).filter_by(agency_id=agency_id, deleted_at=None)
+    query = _own_properties(
+        Property.query.options(*property_load_options()).filter_by(agency_id=agency_id, deleted_at=None)
+    )
     if status:
         query = query.filter_by(status=status)
     if listing_type:
@@ -66,6 +75,7 @@ def list_properties(agency_id: str, *, status: str | None = None, listing_type: 
 def get_property(agency_id: str, property_id: str, *, trashed: bool = False) -> Property:
     """A live property, or with trashed=True one in the trash."""
     query = Property.query.options(*property_load_options()).filter_by(id=property_id, agency_id=agency_id)
+    query = _own_properties(query)
     query = query.filter(Property.deleted_at.isnot(None) if trashed else Property.deleted_at.is_(None))
     prop = query.first()
     if prop is None:
@@ -77,6 +87,7 @@ def create_property(agency_id: str, created_by: str, data: dict) -> Property:
     prop = Property(
         agency_id=agency_id,
         created_by=created_by,
+        assigned_agent_id=created_by,
         title=data["title"],
         slug=_unique_slug(agency_id, data["title"]),
         listing_type=data["listing_type"],
@@ -119,6 +130,13 @@ def update_property(agency_id: str, property_id: str, data: dict) -> Property:
         if owner is None:
             raise PropertyError("Owner not found", 404)
 
+    if "assigned_agent_id" in data:
+        # Handing a property to someone else is for owners and admins.
+        if agent_scope():
+            raise PropertyError("Forbidden", 403)
+        if data["assigned_agent_id"] and not is_member(agency_id, data["assigned_agent_id"]):
+            raise PropertyError("Agent not found", 404)
+
     if "title" in data and data["title"] != prop.title:
         prop.slug = _unique_slug(agency_id, data["title"], exclude_id=prop.id)
 
@@ -147,8 +165,11 @@ def delete_property(agency_id: str, property_id: str) -> None:
 def list_trashed_properties(agency_id: str):
     purge_trashed_properties(agency_id)
     return (
-        Property.query.options(*property_load_options())
-        .filter(Property.agency_id == agency_id, Property.deleted_at.isnot(None))
+        _own_properties(
+            Property.query.options(*property_load_options()).filter(
+                Property.agency_id == agency_id, Property.deleted_at.isnot(None)
+            )
+        )
         .order_by(Property.deleted_at.desc())
         .all()
     )
@@ -208,6 +229,7 @@ def create_room(agency_id: str, created_by: str, parent_property_id: str) -> Pro
     room = Property(
         agency_id=agency_id,
         created_by=created_by,
+        assigned_agent_id=parent.assigned_agent_id,
         parent_property_id=parent.id,
         title=f"{parent.title} — New Room",
         slug=_unique_slug(agency_id, f"{parent.title}-room"),

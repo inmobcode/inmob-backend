@@ -6,8 +6,10 @@ from app.extensions import db
 from app.models import Agency, AvailabilityBlock, Booking, Client, Offer, Payment, Property
 from app.schemas.agency import AgencyPublicSchema
 from app.schemas.property import PublicPropertySchema
+from app.services import feed
 from app.services.notifications import notify_booking
 from app.utils import trash
+from app.utils.tenancy import agent_scope
 
 TERMINAL_STATUSES = ("CANCELLED", "COMPLETED")
 
@@ -20,7 +22,14 @@ class BookingError(Exception):
 
 
 def _validate_scoped(agency_id: str, model, record_id: str, label: str):
-    record = model.query.filter_by(id=record_id, agency_id=agency_id).first()
+    query = model.query.filter_by(id=record_id, agency_id=agency_id)
+    # An agent can only book what's assigned to them, and only for their own clients.
+    scope = agent_scope()
+    if scope and model is Property:
+        query = query.filter(Property.assigned_agent_id == scope)
+    elif scope and model is Client:
+        query = query.filter(db.or_(Client.assigned_agent_id == scope, Client.assigned_agent_id.is_(None)))
+    record = query.first()
     # Something in the trash can't be booked or linked.
     if record is None or getattr(record, "deleted_at", None) is not None:
         raise BookingError(f"{label} not found", 404)
@@ -37,10 +46,15 @@ def _booking_load_options():
     )
 
 
+def _own_bookings(query):
+    """An AGENT sees only the bookings they made."""
+    scope = agent_scope()
+    return query.filter(Booking.created_by == scope) if scope else query
+
+
 def list_bookings(agency_id: str):
     return (
-        Booking.query.options(*_booking_load_options())
-        .filter_by(agency_id=agency_id, deleted_at=None)
+        _own_bookings(Booking.query.options(*_booking_load_options()).filter_by(agency_id=agency_id, deleted_at=None))
         .order_by(Booking.created_at.desc())
         .all()
     )
@@ -48,7 +62,7 @@ def list_bookings(agency_id: str):
 
 def get_booking(agency_id: str, booking_id: str, *, trashed: bool = False) -> Booking:
     """A live booking, or with trashed=True one in the trash."""
-    query = Booking.query.options(*_booking_load_options()).filter_by(id=booking_id, agency_id=agency_id)
+    query = _own_bookings(Booking.query.options(*_booking_load_options()).filter_by(id=booking_id, agency_id=agency_id))
     query = query.filter(Booking.deleted_at.isnot(None) if trashed else Booking.deleted_at.is_(None))
     booking = query.first()
     if booking is None:
@@ -196,7 +210,7 @@ def delete_booking(agency_id: str, booking_id: str) -> None:
 def list_trashed_bookings(agency_id: str):
     purge_trashed_bookings(agency_id)
     return (
-        Booking.query.filter(Booking.agency_id == agency_id, Booking.deleted_at.isnot(None))
+        _own_bookings(Booking.query.filter(Booking.agency_id == agency_id, Booking.deleted_at.isnot(None)))
         .order_by(Booking.deleted_at.desc())
         .all()
     )
@@ -287,4 +301,5 @@ def mark_payment_paid(agency_id: str, booking_id: str, payment_id: str) -> Payme
     payment.status = "PAID"
     payment.paid_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.session.commit()
+    feed.notify_payment(booking, payment)
     return payment

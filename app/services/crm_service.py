@@ -1,6 +1,8 @@
 from app.extensions import db
 from app.models import Client, Inquiry, Interaction, Offer, Property
+from app.services import feed
 from app.services.notifications import notify_new_inquiry
+from app.utils.tenancy import agent_scope, is_member
 
 
 class ClientError(Exception):
@@ -10,18 +12,50 @@ class ClientError(Exception):
         self.status_code = status_code
 
 
+def visible_clients(query):
+    """An AGENT sees their own clients plus the ones nobody has taken yet (new web leads)."""
+    scope = agent_scope()
+    if scope:
+        return query.filter(db.or_(Client.assigned_agent_id == scope, Client.assigned_agent_id.is_(None)))
+    return query
+
+
+def visible_inquiries(query):
+    """An AGENT sees the inquiries of the clients they can see."""
+    if not agent_scope():
+        return query
+    visible = visible_clients(db.session.query(Client.id))
+    return query.filter(db.or_(Inquiry.client_id.is_(None), Inquiry.client_id.in_(visible)))
+
+
 def list_clients(agency_id: str):
-    return Client.query.filter_by(agency_id=agency_id).order_by(Client.created_at.desc()).all()
+    return visible_clients(Client.query.filter_by(agency_id=agency_id)).order_by(Client.created_at.desc()).all()
 
 
 def get_client(agency_id: str, client_id: str) -> Client:
-    client = Client.query.filter_by(id=client_id, agency_id=agency_id).first()
+    client = visible_clients(Client.query.filter_by(id=client_id, agency_id=agency_id)).first()
     if client is None:
         raise ClientError("Client not found", 404)
     return client
 
 
-def create_client(agency_id: str, data: dict) -> Client:
+def _check_assignee(agency_id: str, data: dict) -> None:
+    """Handing a client to someone else is for owners and admins; an agent can only take one."""
+    if "assigned_agent_id" not in data:
+        return
+    target = data["assigned_agent_id"]
+    scope = agent_scope()
+    if scope and target not in (scope, None):
+        raise ClientError("Forbidden", 403)
+    if target and not is_member(agency_id, target):
+        raise ClientError("Agent not found", 404)
+
+
+def create_client(agency_id: str, created_by: str, data: dict) -> Client:
+    _check_assignee(agency_id, data)
+    # Whoever adds a client looks after them; only web leads start unassigned.
+    if not data.get("assigned_agent_id"):
+        data = {**data, "assigned_agent_id": created_by}
     client = Client(agency_id=agency_id, source="MANUAL", **data)
     db.session.add(client)
     db.session.commit()
@@ -30,6 +64,7 @@ def create_client(agency_id: str, data: dict) -> Client:
 
 def update_client(agency_id: str, client_id: str, data: dict) -> Client:
     client = get_client(agency_id, client_id)
+    _check_assignee(agency_id, data)
     for field, value in data.items():
         setattr(client, field, value)
     db.session.commit()
@@ -117,4 +152,5 @@ def log_inquiry(
 
     db.session.commit()
     notify_new_inquiry(inquiry)
+    feed.notify_inquiry(inquiry, client)
     return inquiry

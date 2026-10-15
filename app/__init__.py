@@ -47,13 +47,16 @@ def register_blueprints(app: Flask) -> None:
     from app.blueprints.availability import bp as availability_bp
     from app.blueprints.bookings import bp as bookings_bp
     from app.blueprints.clients import bp as clients_bp
+    from app.blueprints.dashboard import bp as dashboard_bp
     from app.blueprints.documents import bp as documents_bp
     from app.blueprints.inquiries import bp as inquiries_bp
+    from app.blueprints.notifications import bp as notifications_bp
     from app.blueprints.offers import bp as offers_bp
     from app.blueprints.payments import bp as payments_bp
     from app.blueprints.properties import bp as properties_bp
     from app.blueprints.public import bp as public_bp
     from app.blueprints.service_library import bp as service_library_bp
+    from app.blueprints.tasks import bp as tasks_bp
     from app.blueprints.team import bp as team_bp
 
     for bp in (
@@ -70,5 +73,8 @@ def register_blueprints(app: Flask) -> None:
         team_bp,
         public_bp,
         service_library_bp,
+        tasks_bp,
+        notifications_bp,
+        dashboard_bp,
     ):
         app.register_blueprint(bp)

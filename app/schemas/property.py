@@ -108,6 +108,7 @@ class PropertySchema(Schema):
     agency_id = fields.Str(data_key="agencyId", dump_only=True)
     agency_slug = fields.Method("get_agency_slug", data_key="agencySlug", dump_only=True)
     owner_id = fields.Str(data_key="ownerId", allow_none=True)
+    assigned_agent_id = fields.Str(data_key="assignedAgentId", allow_none=True)
     parent_property_id = fields.Str(data_key="parentPropertyId", allow_none=True)
     title = fields.Str(required=True, validate=validate.Length(min=2, max=200))
     slug = fields.Str(dump_only=True)
@@ -221,6 +222,7 @@ class PropertyCreateSchema(Schema):
 class PropertyUpdateSchema(Schema):
     title = fields.Str(validate=validate.Length(min=2, max=200))
     owner_id = fields.Str(data_key="ownerId", allow_none=True)
+    assigned_agent_id = fields.Str(data_key="assignedAgentId", allow_none=True)
     listing_type = fields.Str(data_key="listingType", validate=validate.OneOf(LISTING_TYPES))
     category = fields.Str(validate=validate.OneOf(CATEGORIES))
     price = fields.Float(allow_none=True)

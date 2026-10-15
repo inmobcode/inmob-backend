@@ -31,7 +31,7 @@ def create_client():
     data, error = _load(ClientSchema())
     if error:
         return error
-    client = crm_service.create_client(current_agency_id(), data)
+    client = crm_service.create_client(current_agency_id(), get_jwt_identity(), data)
     return jsonify(client_schema.dump(client)), 201
 
 
