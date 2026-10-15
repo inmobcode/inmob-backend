@@ -17,6 +17,7 @@ from app.models.property import (
 from app.schemas.agency import AgencyPublicSchema
 from app.schemas.property import PublicPropertySchema
 from app.utils import trash
+from app.services import owner_account_service
 from app.utils.slugify import slugify
 from app.utils.tenancy import agent_scope, is_member
 
@@ -385,6 +386,10 @@ def serialize_owner_portal(owner: PropertyOwner) -> dict:
         # Branding and contact, like the client's booking page.
         "agency": {**AgencyPublicSchema().dump(owner.agency), "slug": owner.agency.slug},
         "properties": properties,
+        # Money: what's been collected, what's due to the owner and what was handed over.
+        "statement": owner_account_service.build_statement(
+            owner, with_commission=bool(owner.agency.owner_portal_shows_commission)
+        ),
     }
 
 

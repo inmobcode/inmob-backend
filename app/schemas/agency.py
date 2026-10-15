@@ -145,6 +145,7 @@ class AgencySchema(Schema):
     contact_email = fields.Str(data_key="contactEmail", allow_none=True)
     locale = fields.Str()
     currency = fields.Str()
+    owner_portal_shows_commission = fields.Bool(data_key="ownerPortalShowsCommission")
     site = fields.Method("dump_site")
 
     def dump_site(self, agency):
@@ -152,6 +153,7 @@ class AgencySchema(Schema):
 
 
 class AgencyUpdateSchema(Schema):
+    owner_portal_shows_commission = fields.Bool(data_key="ownerPortalShowsCommission")
     name = fields.Str(validate=validate.Length(min=2, max=200))
     slug = fields.Str(validate=validate.Length(min=2, max=200))
     contact_email = fields.Email(data_key="contactEmail", allow_none=True)

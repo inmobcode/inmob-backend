@@ -224,3 +224,29 @@ def test_calendar_rejects_bad_windows(client, register_agency):
     agency = register_agency(agency_name="Agencia Bad", email="bad@demo.com")
     for query in ("from=nope", "days=0", "days=500"):
         assert client.get(f"/api/properties/calendar?{query}", headers=agency["headers"]).status_code == 400
+
+
+def test_calendar_lists_pending_bookings_apart_and_not_publicly(client, register_agency):
+    agency = register_agency(agency_name="Agencia Pend", email="pend@demo.com")
+    prop = _rental(client, agency["headers"], "Casa pendiente")
+    client.post(f"/api/properties/{prop['id']}/publish", headers=agency["headers"])
+    booking = client.post(
+        "/api/bookings/",
+        headers=agency["headers"],
+        json={"propertyId": prop["id"], "startDate": "2031-05-10", "endDate": "2031-05-13"},
+    )
+    assert booking.status_code == 201
+
+    window = "from=2031-05-01&days=31"
+    row = client.get(f"/api/properties/calendar?{window}", headers=agency["headers"]).get_json()["properties"][0]
+    assert row["blockedDates"] == []
+    assert row["pendingDates"] == ["2031-05-10", "2031-05-11", "2031-05-12", "2031-05-13"]
+
+    # Once confirmed it blocks the dates and is no longer "pending".
+    client.post(f"/api/bookings/{booking.get_json()['id']}/confirm", headers=agency["headers"])
+    row = client.get(f"/api/properties/calendar?{window}", headers=agency["headers"]).get_json()["properties"][0]
+    assert row["pendingDates"] == []
+    assert row["blockedDates"] == ["2031-05-10", "2031-05-11", "2031-05-12", "2031-05-13"]
+
+    public = client.get("/api/public/agencia-pend/availability").get_json()["properties"][0]
+    assert public["pendingDates"] == []

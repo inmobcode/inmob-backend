@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models.availability import AvailabilityBlock
+from app.models.booking import Booking
 from app.models.property import Property
 from app.utils.tenancy import agent_scope
 
@@ -193,6 +194,25 @@ def agency_calendar(
     window_end = today + timedelta(days=window_days - 1)
 
     blocked_by_property: dict[str, set[date]] = defaultdict(set)
+    # Pending bookings don't block the calendar yet (only a confirmed one does),
+    # but the agency wants to see them. Never shown on the public link.
+    pending_by_property: dict[str, set[date]] = defaultdict(set)
+    if properties and not published_only:
+        pending = Booking.query.filter(
+            Booking.property_id.in_([prop.id for prop in properties]),
+            Booking.status == "PENDING",
+            Booking.deleted_at.is_(None),
+            Booking.start_date.isnot(None),
+            Booking.end_date.isnot(None),
+            Booking.start_date <= window_end,
+            Booking.end_date >= today,
+        ).all()
+        for booking in pending:
+            cursor = max(booking.start_date, today)
+            last = min(booking.end_date, window_end)
+            while cursor <= last:
+                pending_by_property[booking.property_id].add(cursor)
+                cursor += timedelta(days=1)
     if properties:
         property_ids = [prop.id for prop in properties]
         blocks = AvailabilityBlock.query.filter(
@@ -223,6 +243,7 @@ def agency_calendar(
                 "currency": prop.currency,
                 "coverUrl": _cover_url(prop),
                 "blockedDates": sorted(d.isoformat() for d in blocked_by_property.get(prop.id, ())),
+                "pendingDates": sorted(d.isoformat() for d in pending_by_property.get(prop.id, ())),
             }
             for prop in properties
         ],
