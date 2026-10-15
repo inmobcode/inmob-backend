@@ -266,3 +266,34 @@ def test_workflow_endpoints_require_login(client):
     assert client.get("/api/dashboard/summary").status_code == 401
     assert client.get("/api/tasks/").status_code == 401
     assert client.get("/api/notifications/").status_code == 401
+
+
+# --- an agent can't reach other people's records through side doors -----------
+
+
+def test_agent_cannot_use_a_colleagues_property_client_or_offer(client, register_agency):
+    owner = register_agency(agency_name="Agencia S", email="s@demo.com")
+    agent = _invite_agent(client, owner["headers"])
+
+    theirs = _property(client, owner["headers"], "Del dueño")
+    their_client = _client(client, owner["headers"], "Del dueño", "dueno@demo.com")
+    their_offer = client.post("/api/offers/", headers=owner["headers"], json={"title": "Oferta ajena"}).get_json()
+    mine = _property(client, agent["headers"], "De la agente")
+
+    # Calendar of someone else's property
+    res = client.get(f"/api/properties/{theirs['id']}/availability/", headers=agent["headers"])
+    assert res.status_code == 404
+
+    # Booking someone else's property, client or offer
+    for body in (
+        {"propertyId": theirs["id"]},
+        {"propertyId": mine["id"], "clientId": their_client["id"]},
+        {"propertyId": mine["id"], "offerId": their_offer["id"]},
+    ):
+        assert client.post("/api/bookings/", headers=agent["headers"], json=body).status_code == 404, body
+
+    # Putting someone else's property or client into their own offer
+    own_offer = client.post("/api/offers/", headers=agent["headers"], json={"title": "Mía"}).get_json()
+    res = client.patch(f"/api/offers/{own_offer['id']}", headers=agent["headers"], json={"clientId": their_client["id"]})
+    assert res.status_code == 404
+    assert client.post("/api/bookings/", headers=agent["headers"], json={"propertyId": mine["id"]}).status_code == 201

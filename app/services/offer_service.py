@@ -73,7 +73,10 @@ def _sync_sections(agency_id: str, offer: Offer, sections_data: list[dict]) -> N
         offer.sections.append(section)
 
         for item in section_data.get("properties", []):
-            prop = Property.query.filter_by(id=item["property_id"], agency_id=agency_id).first()
+            prop_query = Property.query.filter_by(id=item["property_id"], agency_id=agency_id)
+            if agent_scope():  # an agent can only offer what's assigned to them
+                prop_query = prop_query.filter(Property.assigned_agent_id == agent_scope())
+            prop = prop_query.first()
             if prop is None:
                 raise OfferError(f"Property {item['property_id']} not found", 404)
             _check_operation(offer, prop)
@@ -101,7 +104,7 @@ def _assign_client(agency_id: str, offer: Offer, client_id: str | None) -> None:
         offer.client_email = None
         offer.client_phone = None
         return
-    client = Client.query.filter_by(id=client_id, agency_id=agency_id).first()
+    client = crm_service.visible_clients(Client.query.filter_by(id=client_id, agency_id=agency_id)).first()
     if client is None:
         raise OfferError("Client not found", 404)
     offer.client_id = client.id

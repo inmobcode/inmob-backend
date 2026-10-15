@@ -27,6 +27,8 @@ def _validate_scoped(agency_id: str, model, record_id: str, label: str):
     scope = agent_scope()
     if scope and model is Property:
         query = query.filter(Property.assigned_agent_id == scope)
+    elif scope and model is Offer:
+        query = query.filter(Offer.created_by == scope)
     elif scope and model is Client:
         query = query.filter(db.or_(Client.assigned_agent_id == scope, Client.assigned_agent_id.is_(None)))
     record = query.first()

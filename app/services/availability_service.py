@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.extensions import db
 from app.models.availability import AvailabilityBlock
 from app.models.property import Property
+from app.utils.tenancy import agent_scope
 
 ICAL_FETCH_TIMEOUT_SECONDS = 10
 CALENDAR_WINDOW_DAYS = 90
@@ -22,7 +23,12 @@ class AvailabilityError(Exception):
 
 
 def _get_property(agency_id: str, property_id: str) -> Property:
-    prop = Property.query.filter_by(id=property_id, agency_id=agency_id, deleted_at=None).first()
+    query = Property.query.filter_by(id=property_id, agency_id=agency_id, deleted_at=None)
+    # An agent only manages the calendar of what's assigned to them.
+    scope = agent_scope()
+    if scope:
+        query = query.filter(Property.assigned_agent_id == scope)
+    prop = query.first()
     if prop is None:
         raise AvailabilityError("Property not found", 404)
     return prop
