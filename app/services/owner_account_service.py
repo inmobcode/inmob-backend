@@ -38,8 +38,10 @@ def _round(value: float) -> float:
 
 
 def build_statement(owner: PropertyOwner, *, with_commission: bool = True) -> dict:
-    """The owner's statement. Without `with_commission` the commission is left out of
-    every figure shown (the owner just sees what they are due)."""
+    """The owner's statement. Without `with_commission` the commission has to stay
+    undeducible: `due` is collected minus commission, so showing the gross figures
+    next to it would give the commission away by subtraction. The owner then only
+    gets the net ones (due, handed over, balance)."""
     properties = Property.query.filter_by(owner_id=owner.id, deleted_at=None).all()
     titles = {prop.id: prop.title for prop in properties}
     bookings = (
@@ -77,12 +79,10 @@ def build_statement(owner: PropertyOwner, *, with_commission: bool = True) -> di
             "endDate": _iso(booking.end_date),
             "status": booking.status,
             "currency": currency,
-            "total": _round(total),
-            "collected": _round(collected),
             "due": _round(due),
         }
         if with_commission:
-            row["commission"] = _round(commission)
+            row.update(total=_round(total), collected=_round(collected), commission=_round(commission))
         rows.append(row)
 
     payouts = (
@@ -96,15 +96,17 @@ def build_statement(owner: PropertyOwner, *, with_commission: bool = True) -> di
         bucket = totals[currency]
         line = {
             "currency": currency,
-            "booked": _round(bucket["booked"]),
-            "collected": _round(bucket["collected"]),
             "due": _round(bucket["due"]),
             "paidOut": _round(bucket["paidOut"]),
             # Negative means the agency has handed over more than has been collected so far.
             "balance": _round(bucket["due"] - bucket["paidOut"]),
         }
         if with_commission:
-            line["commission"] = _round(bucket["commission"])
+            line.update(
+                booked=_round(bucket["booked"]),
+                collected=_round(bucket["collected"]),
+                commission=_round(bucket["commission"]),
+            )
         summary.append(line)
 
     return {

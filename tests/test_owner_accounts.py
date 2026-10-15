@@ -94,11 +94,17 @@ def test_owner_portal_hides_the_commission_unless_the_agency_allows_it(client, r
 
     portal = client.get(f"/api/public/owners/{owner['accessToken']}").get_json()
     totals = portal["statement"]["totals"][0]
-    assert "commission" not in totals and "commission" not in portal["statement"]["bookings"][0]
+    row = portal["statement"]["bookings"][0]
+    # No commission, and no gross figures that would give it away by subtracting from `due`.
+    for hidden in ("commission", "collected", "booked"):
+        assert hidden not in totals
+    for hidden in ("commission", "collected", "total"):
+        assert hidden not in row
     assert (totals["due"], totals["paidOut"], totals["balance"]) == (500.0, 150.0, 350.0)
 
     res = client.patch("/api/agency/", headers=agency["headers"], json={"ownerPortalShowsCommission": True})
     assert res.status_code == 200 and res.get_json()["ownerPortalShowsCommission"] is True
     portal = client.get(f"/api/public/owners/{owner['accessToken']}").get_json()
     assert portal["statement"]["totals"][0]["commission"] == 100.0
+    assert portal["statement"]["totals"][0]["collected"] == 600.0
     assert portal["statement"]["bookings"][0]["commission"] == 100.0
