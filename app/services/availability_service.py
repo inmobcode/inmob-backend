@@ -165,10 +165,16 @@ def _cover_url(property_: Property) -> str | None:
     return photos[0].url if photos else None
 
 
-def agency_calendar(agency_id: str, *, published_only: bool, window_days: int = CALENDAR_WINDOW_DAYS) -> dict:
-    """Every rental property's availability for the next `window_days` days, as a
-    set of blocked dates per property — the data behind the agency-wide
-    calendar grid (dashboard tool and its public share link).
+def agency_calendar(
+    agency_id: str,
+    *,
+    published_only: bool,
+    window_days: int = CALENDAR_WINDOW_DAYS,
+    start: date | None = None,
+) -> dict:
+    """Every rental property's availability for `window_days` days from `start`
+    (today by default), as a set of blocked dates per property — the data behind
+    the agency-wide calendar (dashboard grid and month view, and the public share link).
 
     `published_only=True` is what the public link shows; the dashboard passes
     False so staff also see draft/unpublished listings they're tracking.
@@ -178,9 +184,12 @@ def agency_calendar(agency_id: str, *, published_only: bool, window_days: int = 
     )
     if published_only:
         query = query.filter_by(status="PUBLISHED")
+    elif agent_scope():
+        # In the dashboard an agent only sees the listings assigned to them.
+        query = query.filter(Property.assigned_agent_id == agent_scope())
     properties = query.order_by(Property.title).all()
 
-    today = date.today()
+    today = start or date.today()
     window_end = today + timedelta(days=window_days - 1)
 
     blocked_by_property: dict[str, set[date]] = defaultdict(set)

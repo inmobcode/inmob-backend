@@ -297,3 +297,14 @@ def test_agent_cannot_use_a_colleagues_property_client_or_offer(client, register
     res = client.patch(f"/api/offers/{own_offer['id']}", headers=agent["headers"], json={"clientId": their_client["id"]})
     assert res.status_code == 404
     assert client.post("/api/bookings/", headers=agent["headers"], json={"propertyId": mine["id"]}).status_code == 201
+
+
+def test_agent_calendar_only_lists_their_rentals(client, register_agency):
+    owner = register_agency(agency_name="Agencia K", email="k@demo.com")
+    agent = _invite_agent(client, owner["headers"])
+    for headers, title in ((owner["headers"], "Del dueño"), (agent["headers"], "De la agente")):
+        client.post("/api/properties/", headers=headers, json={"title": title, "listingType": "RENT", "category": "HOUSE"})
+
+    titles = lambda headers: [p["title"] for p in client.get("/api/properties/calendar", headers=headers).get_json()["properties"]]  # noqa: E731
+    assert titles(agent["headers"]) == ["De la agente"]
+    assert sorted(titles(owner["headers"])) == ["De la agente", "Del dueño"]

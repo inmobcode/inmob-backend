@@ -191,3 +191,36 @@ def test_availability_isolated_per_agency(client, register_agency):
 
     res = client.get(f"/api/properties/{prop['id']}/availability/", headers=agency_b["headers"])
     assert res.status_code == 404
+
+
+# --- the calendar for any window (the dashboard's month view) -------------------
+
+
+def _rental(client, headers, title="Casa"):
+    prop = client.post(
+        "/api/properties/", headers=headers, json={"title": title, "listingType": "RENT", "category": "HOUSE"}
+    ).get_json()
+    return prop
+
+
+def test_calendar_accepts_a_window(client, register_agency):
+    agency = register_agency(agency_name="Agencia Cal", email="cal@demo.com")
+    prop = _rental(client, agency["headers"])
+    client.post(
+        f"/api/properties/{prop['id']}/availability/",
+        headers=agency["headers"],
+        json={"startDate": "2031-03-10", "endDate": "2031-03-12"},
+    )
+
+    default = client.get("/api/properties/calendar", headers=agency["headers"]).get_json()
+    assert default["properties"][0]["blockedDates"] == []
+
+    march = client.get("/api/properties/calendar?from=2031-03-01&days=42", headers=agency["headers"]).get_json()
+    assert march["from"] == "2031-03-01" and march["to"] == "2031-04-11"
+    assert march["properties"][0]["blockedDates"] == ["2031-03-10", "2031-03-11", "2031-03-12"]
+
+
+def test_calendar_rejects_bad_windows(client, register_agency):
+    agency = register_agency(agency_name="Agencia Bad", email="bad@demo.com")
+    for query in ("from=nope", "days=0", "days=500"):
+        assert client.get(f"/api/properties/calendar?{query}", headers=agency["headers"]).status_code == 400
