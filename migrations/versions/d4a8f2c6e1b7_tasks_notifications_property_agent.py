@@ -1,7 +1,7 @@
 """tasks, notifications and the agent a property is assigned to
 
 Revision ID: d4a8f2c6e1b7
-Revises: c7a2e9f4b1d3
+Revises: 398a483d100b
 Create Date: 2026-10-15 12:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'd4a8f2c6e1b7'
-down_revision = 'c7a2e9f4b1d3'
+down_revision = '398a483d100b'
 branch_labels = None
 depends_on = None
 
