@@ -7,7 +7,9 @@ from app.schemas.agency import AgencyPublicSchema
 from app.schemas.client import PublicInquirySchema
 from app.schemas.offer import PublicOfferInquirySchema
 from app.schemas.property import PublicPropertySchema
+from app.schemas.public import ContactRequestSchema, DemoRequestSchema
 from app.services import availability_service, booking_service, crm_service, offer_service, property_service
+from app.services.notifications import notify_contact_request, notify_demo_request
 
 property_schema = PublicPropertySchema()
 properties_schema = PublicPropertySchema(many=True)
@@ -102,6 +104,15 @@ def get_property_ics(agency_slug, property_slug):
     return Response(ics_bytes, mimetype="text/calendar")
 
 
+@bp.route("/<agency_slug>/availability", methods=["GET"])
+def get_public_availability_calendar(agency_slug):
+    """The agency's shareable availability calendar link: published rentals only."""
+    agency = _get_agency_or_404(agency_slug)
+    if agency is None:
+        return jsonify({"message": "Agency not found"}), 404
+    return jsonify(availability_service.agency_calendar(agency.id, published_only=True))
+
+
 @bp.route("/<agency_slug>/inquiries", methods=["POST"])
 def create_inquiry(agency_slug):
     agency = _get_agency_or_404(agency_slug)
@@ -170,3 +181,57 @@ def get_public_booking(token):
     except booking_service.BookingError as err:
         return jsonify({"message": err.message}), err.status_code
     return jsonify(booking_service.serialize_public_booking(booking))
+
+
+@bp.route("/sitemap", methods=["GET"])
+def get_sitemap_urls():
+    """Everything crawlable on tivvo.app: each agency's site and its published
+    listings. Feeds the frontend's sitemap.xml, so it only carries the slugs
+    and timestamps a sitemap entry needs. The `/<agency_slug>` rule can't
+    swallow it: Werkzeug matches a static segment before a converter.
+    """
+    agencies = Agency.query.order_by(Agency.created_at).all()
+    properties = (
+        Property.query.join(Agency, Property.agency_id == Agency.id)
+        .filter(Property.status == "PUBLISHED", Property.deleted_at.is_(None))
+        .with_entities(Agency.slug, Property.slug, Property.updated_at)
+        .all()
+    )
+    return jsonify(
+        {
+            "agencies": [
+                {"slug": agency.slug, "name": agency.name, "updatedAt": agency.updated_at.isoformat()}
+                for agency in agencies
+            ],
+            "properties": [
+                {
+                    "agencySlug": agency_slug,
+                    "slug": property_slug,
+                    "updatedAt": updated_at.isoformat(),
+                }
+                for agency_slug, property_slug, updated_at in properties
+            ],
+        }
+    )
+
+
+@bp.route("/demo-requests", methods=["POST"])
+def create_demo_request():
+    """The tivvo.app landing's "Pedir una demo" form. Not agency-scoped: it's a prospect, not a client."""
+    try:
+        data = DemoRequestSchema().load(request.get_json(silent=True) or {})
+    except ValidationError as err:
+        return jsonify({"message": "Validation error", "errors": err.messages}), 400
+    notify_demo_request(data)
+    return "", 201
+
+
+@bp.route("/contact-requests", methods=["POST"])
+def create_contact_request():
+    """The tivvo.app landing's help/contact page."""
+    try:
+        data = ContactRequestSchema().load(request.get_json(silent=True) or {})
+    except ValidationError as err:
+        return jsonify({"message": "Validation error", "errors": err.messages}), 400
+    notify_contact_request(data)
+    return "", 201

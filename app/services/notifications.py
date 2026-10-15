@@ -204,3 +204,32 @@ def notify_offer_sent(offer: Offer) -> None:
         reply_to=agency.contact_email,
         from_name=agency.name,
     )
+
+
+def notify_demo_request(data: dict) -> None:
+    """A prospect asked for a demo from the landing. Goes to the Tivvo team, not an agency."""
+    email_service.send_email(
+        current_app.config["TEAM_NOTIFICATION_EMAILS"],
+        f"Pedido de demo: {data['agency']}",
+        _layout(
+            '<h1 style="font-size:20px;margin:0 0 16px">Pedido de demo</h1>'
+            f'<p style="margin:0 0 12px"><strong>{escape(data["name"])}</strong>, de {escape(data["agency"])}</p>'
+            f'<p style="margin:0 0 12px">Email: {escape(data["email"])}</p>'
+            f'<p style="margin:0 0 12px">Tamaño del equipo: {escape(data["team_size"])}</p>'
+        ),
+        reply_to=data["email"],
+    )
+
+
+def notify_contact_request(data: dict) -> None:
+    """Someone wrote in from the landing's help/contact page. Goes to the Tivvo team."""
+    email_service.send_email(
+        current_app.config["TEAM_NOTIFICATION_EMAILS"],
+        f"Contacto desde Tivvo: {data['name']}",
+        _layout(
+            '<h1 style="font-size:20px;margin:0 0 16px">Nuevo mensaje de contacto</h1>'
+            f'<p style="margin:0 0 12px"><strong>{escape(data["name"])}</strong> — {escape(data["email"])}</p>'
+            + _paragraphs(data["message"])
+        ),
+        reply_to=data["email"],
+    )

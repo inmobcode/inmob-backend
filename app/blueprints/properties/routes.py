@@ -14,7 +14,7 @@ from app.schemas.property import (
 )
 from app.schemas.rate_period import RatePeriodSchema, RatePeriodUpdateSchema
 from app.schemas.recommendation import RecommendationSchema, RecommendationUpdateSchema
-from app.services import property_service, storage_service
+from app.services import availability_service, property_service, storage_service
 from app.utils.tenancy import current_agency_id
 
 property_schema = PropertySchema()
@@ -56,6 +56,14 @@ def create_property():
     agency_id = current_agency_id()
     prop = property_service.create_property(agency_id, get_jwt_identity(), data)
     return jsonify(property_schema.dump(prop)), 201
+
+
+@bp.route("/calendar", methods=["GET"])
+def get_availability_calendar():
+    """The agency-wide availability grid: every rental listing's blocked dates
+    for the next 90 days, draft or published — the public share link filters
+    to published-only separately, in the public blueprint."""
+    return jsonify(availability_service.agency_calendar(current_agency_id(), published_only=False))
 
 
 @bp.route("/owners", methods=["GET"])

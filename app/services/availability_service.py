@@ -1,13 +1,16 @@
-from datetime import date, datetime
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 
 import requests
 from icalendar import Calendar, Event
+from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models.availability import AvailabilityBlock
 from app.models.property import Property
 
 ICAL_FETCH_TIMEOUT_SECONDS = 10
+CALENDAR_WINDOW_DAYS = 90
 ICAL_MAX_BYTES = 2 * 1024 * 1024  # 2MB is already generous for a calendar feed
 
 
@@ -149,3 +152,63 @@ def export_ics(property_: Property) -> bytes:
         calendar.add_component(event)
 
     return calendar.to_ical()
+
+
+def _cover_url(property_: Property) -> str | None:
+    photos = sorted(property_.photos, key=lambda photo: (not photo.is_cover, photo.position))
+    return photos[0].url if photos else None
+
+
+def agency_calendar(agency_id: str, *, published_only: bool, window_days: int = CALENDAR_WINDOW_DAYS) -> dict:
+    """Every rental property's availability for the next `window_days` days, as a
+    set of blocked dates per property — the data behind the agency-wide
+    calendar grid (dashboard tool and its public share link).
+
+    `published_only=True` is what the public link shows; the dashboard passes
+    False so staff also see draft/unpublished listings they're tracking.
+    """
+    query = Property.query.options(selectinload(Property.photos)).filter_by(
+        agency_id=agency_id, listing_type="RENT", parent_property_id=None, deleted_at=None
+    )
+    if published_only:
+        query = query.filter_by(status="PUBLISHED")
+    properties = query.order_by(Property.title).all()
+
+    today = date.today()
+    window_end = today + timedelta(days=window_days - 1)
+
+    blocked_by_property: dict[str, set[date]] = defaultdict(set)
+    if properties:
+        property_ids = [prop.id for prop in properties]
+        blocks = AvailabilityBlock.query.filter(
+            AvailabilityBlock.property_id.in_(property_ids),
+            AvailabilityBlock.start_date <= window_end,
+            AvailabilityBlock.end_date >= today,
+        ).all()
+        for block in blocks:
+            cursor = max(block.start_date, today)
+            last = min(block.end_date, window_end)
+            while cursor <= last:
+                blocked_by_property[block.property_id].add(cursor)
+                cursor += timedelta(days=1)
+
+    return {
+        "from": today.isoformat(),
+        "to": window_end.isoformat(),
+        "properties": [
+            {
+                "id": prop.id,
+                "title": prop.title,
+                "slug": prop.slug,
+                "category": prop.category,
+                "country": prop.country,
+                "region": prop.region,
+                "area": prop.area,
+                "price": prop.price,
+                "currency": prop.currency,
+                "coverUrl": _cover_url(prop),
+                "blockedDates": sorted(d.isoformat() for d in blocked_by_property.get(prop.id, ())),
+            }
+            for prop in properties
+        ],
+    }

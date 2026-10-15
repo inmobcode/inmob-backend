@@ -29,6 +29,14 @@ class Config:
     # written to the log, so local development needs no account.
     RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
     EMAIL_FROM = os.environ.get("EMAIL_FROM", "Tivvo <avisos@tivvo.app>")
+    # Who gets notified when someone fills the landing's demo or contact form.
+    TEAM_NOTIFICATION_EMAILS = [
+        address.strip()
+        for address in os.environ.get(
+            "TEAM_NOTIFICATION_EMAILS", "facugirardi22@gmail.com,alejo.voyrnet31@gmail.com"
+        ).split(",")
+        if address.strip()
+    ]
     # The dashboard itself: used to build login/inbox links inside emails.
     # It lives on the app subdomain (see frontend/src/proxy.ts).
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://app.localhost:3000")

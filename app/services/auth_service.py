@@ -13,7 +13,7 @@ class AuthError(Exception):
 
 
 def _unique_slug(name: str) -> str:
-    base = slugify(name) or "agencia"
+    base = slugify(name) or "agency"
     slug = base
     suffix = 1
     while Agency.query.filter_by(slug=slug).first() is not None:
