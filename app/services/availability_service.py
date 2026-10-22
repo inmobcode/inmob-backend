@@ -7,7 +7,9 @@ from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models.availability import AvailabilityBlock
+from app.models.booking import Booking
 from app.models.property import Property
+from app.utils.tenancy import agent_scope
 
 ICAL_FETCH_TIMEOUT_SECONDS = 10
 CALENDAR_WINDOW_DAYS = 90
@@ -22,7 +24,12 @@ class AvailabilityError(Exception):
 
 
 def _get_property(agency_id: str, property_id: str) -> Property:
-    prop = Property.query.filter_by(id=property_id, agency_id=agency_id, deleted_at=None).first()
+    query = Property.query.filter_by(id=property_id, agency_id=agency_id, deleted_at=None)
+    # An agent only manages the calendar of what's assigned to them.
+    scope = agent_scope()
+    if scope:
+        query = query.filter(Property.assigned_agent_id == scope)
+    prop = query.first()
     if prop is None:
         raise AvailabilityError("Property not found", 404)
     return prop
@@ -159,10 +166,16 @@ def _cover_url(property_: Property) -> str | None:
     return photos[0].url if photos else None
 
 
-def agency_calendar(agency_id: str, *, published_only: bool, window_days: int = CALENDAR_WINDOW_DAYS) -> dict:
-    """Every rental property's availability for the next `window_days` days, as a
-    set of blocked dates per property — the data behind the agency-wide
-    calendar grid (dashboard tool and its public share link).
+def agency_calendar(
+    agency_id: str,
+    *,
+    published_only: bool,
+    window_days: int = CALENDAR_WINDOW_DAYS,
+    start: date | None = None,
+) -> dict:
+    """Every rental property's availability for `window_days` days from `start`
+    (today by default), as a set of blocked dates per property — the data behind
+    the agency-wide calendar (dashboard grid and month view, and the public share link).
 
     `published_only=True` is what the public link shows; the dashboard passes
     False so staff also see draft/unpublished listings they're tracking.
@@ -172,12 +185,34 @@ def agency_calendar(agency_id: str, *, published_only: bool, window_days: int = 
     )
     if published_only:
         query = query.filter_by(status="PUBLISHED")
+    elif agent_scope():
+        # In the dashboard an agent only sees the listings assigned to them.
+        query = query.filter(Property.assigned_agent_id == agent_scope())
     properties = query.order_by(Property.title).all()
 
-    today = date.today()
+    today = start or date.today()
     window_end = today + timedelta(days=window_days - 1)
 
     blocked_by_property: dict[str, set[date]] = defaultdict(set)
+    # Pending bookings don't block the calendar yet (only a confirmed one does),
+    # but the agency wants to see them. Never shown on the public link.
+    pending_by_property: dict[str, set[date]] = defaultdict(set)
+    if properties and not published_only:
+        pending = Booking.query.filter(
+            Booking.property_id.in_([prop.id for prop in properties]),
+            Booking.status == "PENDING",
+            Booking.deleted_at.is_(None),
+            Booking.start_date.isnot(None),
+            Booking.end_date.isnot(None),
+            Booking.start_date <= window_end,
+            Booking.end_date >= today,
+        ).all()
+        for booking in pending:
+            cursor = max(booking.start_date, today)
+            last = min(booking.end_date, window_end)
+            while cursor <= last:
+                pending_by_property[booking.property_id].add(cursor)
+                cursor += timedelta(days=1)
     if properties:
         property_ids = [prop.id for prop in properties]
         blocks = AvailabilityBlock.query.filter(
@@ -208,6 +243,7 @@ def agency_calendar(agency_id: str, *, published_only: bool, window_days: int = 
                 "currency": prop.currency,
                 "coverUrl": _cover_url(prop),
                 "blockedDates": sorted(d.isoformat() for d in blocked_by_property.get(prop.id, ())),
+                "pendingDates": sorted(d.isoformat() for d in pending_by_property.get(prop.id, ())),
             }
             for prop in properties
         ],

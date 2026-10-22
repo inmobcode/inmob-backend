@@ -1,3 +1,5 @@
+from datetime import date
+
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
 from marshmallow import ValidationError
@@ -28,6 +30,7 @@ rate_periods_schema = RatePeriodSchema(many=True)
 recommendation_schema = RecommendationSchema()
 recommendations_schema = RecommendationSchema(many=True)
 
+MAX_CALENDAR_DAYS = 120  # a month view needs ~42, the default grid 90
 MAX_PHOTO_BYTES = 15 * 1024 * 1024  # 15MB — plenty for a compressed WebP
 
 
@@ -60,10 +63,23 @@ def create_property():
 
 @bp.route("/calendar", methods=["GET"])
 def get_availability_calendar():
-    """The agency-wide availability grid: every rental listing's blocked dates
-    for the next 90 days, draft or published — the public share link filters
-    to published-only separately, in the public blueprint."""
-    return jsonify(availability_service.agency_calendar(current_agency_id(), published_only=False))
+    """The agency-wide availability grid: every rental listing's blocked dates,
+    draft or published — the public share link filters to published-only
+    separately, in the public blueprint. The next 90 days by default;
+    `?from=YYYY-MM-DD&days=N` asks for another window (the month view)."""
+    start = None
+    if request.args.get("from"):
+        try:
+            start = date.fromisoformat(request.args["from"])
+        except ValueError:
+            return jsonify({"message": "`from` must be a date like 2026-10-01"}), 400
+    days = request.args.get("days", type=int)
+    if days is not None and not 1 <= days <= MAX_CALENDAR_DAYS:
+        return jsonify({"message": f"`days` must be between 1 and {MAX_CALENDAR_DAYS}"}), 400
+    kwargs = {"start": start}
+    if days:
+        kwargs["window_days"] = days
+    return jsonify(availability_service.agency_calendar(current_agency_id(), published_only=False, **kwargs))
 
 
 @bp.route("/owners", methods=["GET"])

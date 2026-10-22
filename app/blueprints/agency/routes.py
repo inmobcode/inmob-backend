@@ -39,7 +39,7 @@ def update_agency():
             return jsonify({"message": "Ese slug ya está en uso"}), 409
         agency.slug = data["slug"]
 
-    for field in ("name", "contact_email", "locale", "currency"):
+    for field in ("name", "contact_email", "locale", "currency", "owner_portal_shows_commission"):
         if field in data:
             setattr(agency, field, data[field])
 

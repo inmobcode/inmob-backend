@@ -3,6 +3,7 @@ from app.models.availability import AvailabilityBlock
 from app.models.booking import Booking, Payment
 from app.models.client import Client, Inquiry, Interaction
 from app.models.offer import Offer, OfferProperty, OfferSection, OfferService
+from app.models.owner_payout import OwnerPayout
 from app.models.property import (
     Classification,
     Description,
@@ -15,6 +16,7 @@ from app.models.property import (
 )
 from app.models.service import Service
 from app.models.user import AgencyMembership, User
+from app.models.workflow import Notification, Task
 
 __all__ = [
     "Agency",
@@ -39,4 +41,7 @@ __all__ = [
     "AvailabilityBlock",
     "Booking",
     "Payment",
+    "Task",
+    "Notification",
+    "OwnerPayout",
 ]

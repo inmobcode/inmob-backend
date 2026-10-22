@@ -40,6 +40,9 @@ class Property(db.Model, TimestampMixin, TrashMixin):
     external_id = db.Column(db.String(200), nullable=True)
     owner_id = db.Column(db.String(36), db.ForeignKey("property_owners.id"), nullable=True, index=True)
     created_by = db.Column(db.String(36), db.ForeignKey("users.id"), nullable=True)
+    # Who looks after it. An AGENT only works with the properties assigned to
+    # them; owners and admins see all and can reassign.
+    assigned_agent_id = db.Column(db.String(36), db.ForeignKey("users.id"), nullable=True, index=True)
     # Set when this property is a hotel room: points at the parent HOTEL property.
     parent_property_id = db.Column(db.String(36), db.ForeignKey("properties.id"), nullable=True, index=True)
 

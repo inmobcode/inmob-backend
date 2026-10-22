@@ -16,5 +16,8 @@ class Agency(db.Model, TimestampMixin):
     # Public site customization (template, colors, cover, texts, contact).
     # Shape is defined by SiteSettingsSchema; null means "use the defaults".
     site = db.Column(db.JSON, nullable=True)
+    # Whether the owner's portal itemizes the agency's commission in their account
+    # statement. Off by default: owners only see what is due to them.
+    owner_portal_shows_commission = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
 
     users = db.relationship("User", back_populates="agency", lazy="dynamic")

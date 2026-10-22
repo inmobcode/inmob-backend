@@ -5,6 +5,7 @@ from flask import jsonify, request
 from app.blueprints.inquiries import bp
 from app.extensions import db
 from app.models import Client, Inquiry, Offer, Property
+from app.services.crm_service import visible_inquiries
 from app.utils.tenancy import current_agency_id
 
 
@@ -61,13 +62,13 @@ def _serialize_many(inquiries: list[Inquiry]) -> list[dict]:
 
 
 def _get_or_404(inquiry_id: str):
-    return Inquiry.query.filter_by(id=inquiry_id, agency_id=current_agency_id()).first()
+    return visible_inquiries(Inquiry.query.filter_by(id=inquiry_id, agency_id=current_agency_id())).first()
 
 
 @bp.route("/", methods=["GET"])
 def list_inquiries():
     """Newest first. `?status=new` keeps only the ones nobody opened yet."""
-    query = Inquiry.query.filter_by(agency_id=current_agency_id())
+    query = visible_inquiries(Inquiry.query.filter_by(agency_id=current_agency_id()))
     if request.args.get("status") == "new":
         query = query.filter(Inquiry.read_at.is_(None))
     inquiries = query.order_by(Inquiry.created_at.desc()).limit(200).all()
@@ -76,7 +77,8 @@ def list_inquiries():
 
 @bp.route("/unread-count", methods=["GET"])
 def unread_count():
-    count = Inquiry.query.filter_by(agency_id=current_agency_id()).filter(Inquiry.read_at.is_(None)).count()
+    query = visible_inquiries(Inquiry.query.filter_by(agency_id=current_agency_id()))
+    count = query.filter(Inquiry.read_at.is_(None)).count()
     return jsonify({"count": count})
 
 
@@ -96,10 +98,17 @@ def mark_inquiry(inquiry_id):
 
 @bp.route("/read-all", methods=["POST"])
 def mark_all_read():
-    updated = (
-        Inquiry.query.filter_by(agency_id=current_agency_id())
+    ids = [
+        row.id
+        for row in visible_inquiries(Inquiry.query.filter_by(agency_id=current_agency_id()))
         .filter(Inquiry.read_at.is_(None))
-        .update({Inquiry.read_at: _now()}, synchronize_session=False)
+        .with_entities(Inquiry.id)
+        .all()
+    ]
+    updated = (
+        Inquiry.query.filter(Inquiry.id.in_(ids)).update({Inquiry.read_at: _now()}, synchronize_session=False)
+        if ids
+        else 0
     )
     db.session.commit()
     return jsonify({"updated": updated})
