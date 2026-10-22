@@ -6,6 +6,7 @@ import socket
 from urllib.parse import urljoin, urlparse
 
 import requests
+from flask import current_app
 
 from app.services.importers.records import ImportParseError
 
@@ -18,6 +19,8 @@ def _assert_public(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ImportParseError("La URL debe empezar con http:// o https://")
+    if current_app.config.get("IMPORT_ALLOW_PRIVATE_URLS"):
+        return  # local development only, see config.py
     try:
         addresses = {info[4][0] for info in socket.getaddrinfo(parsed.hostname, parsed.port or 443)}
     except socket.gaierror as err:

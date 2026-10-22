@@ -139,9 +139,8 @@ def _raw_records(fmt: str, content: bytes, filename: str, mapping: dict | None) 
                 "totalRows": len(rows),
             }
             return tabular.records_from_table(rows, used), table
-        if fmt == "kyero":
-            return xmlfeeds.parse_kyero(content), None
-        return xmlfeeds.parse_tivvo_xml(content), None
+        # Either XML option reads either XML: the content decides, not the choice.
+        return xmlfeeds.parse_auto(content), None
     except ImportParseError as err:
         raise ImportFailure(err.message, err.status_code) from err
 

@@ -43,3 +43,8 @@ class Config:
     # Client-facing pages (booking/offer links, the agency's public site) live
     # on the apex domain instead — never the app subdomain above.
     PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "http://localhost:3000")
+
+    # The property importer refuses URLs that point at internal addresses (SSRF
+    # guard). Local development needs it off to read a feed served from
+    # localhost; never set this in production.
+    IMPORT_ALLOW_PRIVATE_URLS = os.environ.get("IMPORT_ALLOW_PRIVATE_URLS") == "1"

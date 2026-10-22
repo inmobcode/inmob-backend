@@ -244,9 +244,33 @@ def test_requires_auth(client):
 
 
 @pytest.mark.parametrize("url", ["http://127.0.0.1/feed.xml", "http://169.254.169.254/latest/meta-data", "ftp://example.com/x", "http://localhost:8000/api/health"])
-def test_url_fetch_blocks_internal_addresses(url):
+def test_url_fetch_blocks_internal_addresses(app, url):
     with pytest.raises(ImportParseError):
         fetch_feed(url)
+
+
+def test_internal_addresses_are_allowed_only_when_the_dev_switch_is_on(app, monkeypatch):
+    class Reply:
+        status_code = 200
+        is_redirect = False
+        headers = {}
+
+        def iter_content(self, size):
+            yield b"<root/>"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("app.services.importers.fetch.requests.get", lambda *a, **k: Reply())
+    with pytest.raises(ImportParseError):
+        fetch_feed("http://127.0.0.1:3000/feed.xml")
+
+    app.config["IMPORT_ALLOW_PRIVATE_URLS"] = True
+    content, _ = fetch_feed("http://127.0.0.1:3000/feed.xml")
+    assert content == b"<root/>"
+    # The switch relaxes the address check, not the scheme check.
+    with pytest.raises(ImportParseError):
+        fetch_feed("ftp://127.0.0.1/feed.xml")
 
 
 def test_csv_can_be_read_from_a_url(app, client, register_agency, monkeypatch):
@@ -268,3 +292,12 @@ def test_malformed_xml_and_wrong_shape_give_a_clear_error(app, client, register_
     assert broken.status_code == 400 and "XML" in broken.get_json()["message"]
     empty = _post(client, agency["headers"], "preview", fmt="kyero", content="<root/>", filename="feed.xml")
     assert empty.status_code == 400
+
+
+def test_xml_format_is_detected_from_the_content_not_the_choice(app, client, register_agency):
+    agency = register_agency()
+    # A Kyero feed sent as "Tivvo XML", and a Tivvo feed sent as "Kyero": both must read fine.
+    kyero_as_tivvo = _post(client, agency["headers"], "preview", fmt="tivvo_xml", content=KYERO, filename="feed.xml")
+    assert kyero_as_tivvo.get_json()["counts"]["create"] == 1
+    tivvo_as_kyero = _post(client, agency["headers"], "preview", fmt="kyero", content=TIVVO, filename="feed.xml")
+    assert tivvo_as_kyero.get_json()["counts"]["create"] == 1

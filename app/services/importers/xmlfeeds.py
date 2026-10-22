@@ -150,3 +150,21 @@ def parse_tivvo_xml(content: bytes) -> list[dict]:
         raw["photos"] = [t for p in _children(_child(item, "photos"), "photo") if (t := _text(p))]
         raws.append(raw)
     return raws
+
+
+def detect_format(content: bytes) -> str:
+    """"kyero" or "tivvo_xml", from the feed itself: a Kyero feed has a <kyero>
+    header or Kyero's own field names (ref, beds, town…) in its <property>
+    nodes. People pick the wrong one of the two XML options, and the rows would
+    all come out empty, so the content decides."""
+    root = _parse(content)
+    if any(_local(el.tag) == "kyero" for el in root.iter()):
+        return "kyero"
+    first = next((el for el in root.iter() if _local(el.tag) == "property"), None)
+    if first is not None and {_local(c.tag) for c in first} & {"ref", "beds", "baths", "town", "price_freq", "surface_area"}:
+        return "kyero"
+    return "tivvo_xml"
+
+
+def parse_auto(content: bytes) -> list[dict]:
+    return parse_kyero(content) if detect_format(content) == "kyero" else parse_tivvo_xml(content)
