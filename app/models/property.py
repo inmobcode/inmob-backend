@@ -26,10 +26,18 @@ class PropertyOwner(db.Model, TimestampMixin):
 
 class Property(db.Model, TimestampMixin, TrashMixin):
     __tablename__ = "properties"
-    __table_args__ = (db.UniqueConstraint("agency_id", "slug", name="uq_property_agency_slug"),)
+    __table_args__ = (
+        db.UniqueConstraint("agency_id", "slug", name="uq_property_agency_slug"),
+        # NULLs never collide, so properties made by hand (no source) are unaffected.
+        db.UniqueConstraint("agency_id", "source", "external_id", name="uq_property_agency_source_external"),
+    )
 
     id = uuid_pk()
     agency_id = db.Column(db.String(36), db.ForeignKey("agencies.id"), nullable=False, index=True)
+    # Where an imported property came from (platform slug) and its id there:
+    # re-importing the same feed updates it instead of duplicating it.
+    source = db.Column(db.String(40), nullable=True)
+    external_id = db.Column(db.String(200), nullable=True)
     owner_id = db.Column(db.String(36), db.ForeignKey("property_owners.id"), nullable=True, index=True)
     created_by = db.Column(db.String(36), db.ForeignKey("users.id"), nullable=True)
     # Set when this property is a hotel room: points at the parent HOTEL property.

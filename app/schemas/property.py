@@ -152,6 +152,8 @@ class PropertySchema(Schema):
     watermark_photos = fields.Bool(data_key="watermarkPhotos")
     video_urls = fields.List(fields.Dict(), data_key="videoUrls", load_default=list)
     ical_import_url = fields.Str(data_key="icalImportUrl", dump_only=True, allow_none=True)
+    source = fields.Str(dump_only=True, allow_none=True)
+    external_id = fields.Str(data_key="externalId", dump_only=True, allow_none=True)
     owner = fields.Nested(PropertyOwnerSchema, dump_only=True)
     photos = fields.Nested(PropertyPhotoSchema, many=True, dump_only=True)
     classification = fields.Nested(ClassificationSchema, allow_none=True)

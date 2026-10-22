@@ -48,6 +48,7 @@ def register_blueprints(app: Flask) -> None:
     from app.blueprints.bookings import bp as bookings_bp
     from app.blueprints.clients import bp as clients_bp
     from app.blueprints.documents import bp as documents_bp
+    from app.blueprints.imports import bp as imports_bp
     from app.blueprints.inquiries import bp as inquiries_bp
     from app.blueprints.offers import bp as offers_bp
     from app.blueprints.payments import bp as payments_bp
@@ -60,6 +61,7 @@ def register_blueprints(app: Flask) -> None:
         auth_bp,
         agency_bp,
         properties_bp,
+        imports_bp,
         availability_bp,
         offers_bp,
         clients_bp,
