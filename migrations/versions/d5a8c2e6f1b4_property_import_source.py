@@ -1,7 +1,7 @@
 """properties.source / external_id for imported listings
 
 Revision ID: d5a8c2e6f1b4
-Revises: 398a483d100b
+Revises: f7c2a9b4d6e3
 Create Date: 2026-10-22 16:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'd5a8c2e6f1b4'
-down_revision = '398a483d100b'
+down_revision = 'f7c2a9b4d6e3'
 branch_labels = None
 depends_on = None
 

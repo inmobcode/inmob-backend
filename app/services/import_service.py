@@ -21,8 +21,8 @@ from app.services.importers.fetch import fetch_feed
 from app.services.importers.records import ImportParseError, normalize_record
 from app.utils import rich_text, trash
 
-FORMATS = ("table", "kyero", "tibo_xml")
-DEFAULT_SOURCE = {"table": "csv", "kyero": "kyero", "tibo_xml": "tibo"}
+FORMATS = ("table", "kyero", "tivvo_xml")
+DEFAULT_SOURCE = {"table": "csv", "kyero": "kyero", "tivvo_xml": "tivvo"}
 
 # record key → Property column, for the plain scalar fields.
 SCALAR_FIELDS = (
@@ -118,8 +118,6 @@ def read_input(*, fmt: str, content: bytes | None, filename: str, url: str | Non
     if content:
         return content, filename
     if url:
-        if fmt == "table":
-            raise ImportFailure("Los CSV y Excel se suben como archivo.")
         try:
             return fetch_feed(url)
         except ImportParseError as err:
@@ -143,7 +141,7 @@ def _raw_records(fmt: str, content: bytes, filename: str, mapping: dict | None) 
             return tabular.records_from_table(rows, used), table
         if fmt == "kyero":
             return xmlfeeds.parse_kyero(content), None
-        return xmlfeeds.parse_tibo_xml(content), None
+        return xmlfeeds.parse_tivvo_xml(content), None
     except ImportParseError as err:
         raise ImportFailure(err.message, err.status_code) from err
 

@@ -1,5 +1,5 @@
 """XML feeds: Kyero v3 (what most CRMs in Spain, Portugal, Cyprus and Malta
-export) and Tibo's own XML (what an agency produces from its own system).
+export) and Tivvo's own XML (what an agency produces from its own system).
 
 Both return raw per-field values for `records.normalize_record`, one dict per
 listing. Parsing goes through defusedxml: feeds come from third parties.
@@ -133,9 +133,9 @@ def parse_kyero(content: bytes) -> list[dict]:
     return raws
 
 
-def parse_tibo_xml(content: bytes) -> list[dict]:
-    """<tibo><listing><external_id/><title/>…<features><feature/></features>
-    <photos><photo/></photos><owner><name/><email/><phone/></owner></listing></tibo>
+def parse_tivvo_xml(content: bytes) -> list[dict]:
+    """<tivvo><listing><external_id/><title/>…<features><feature/></features>
+    <photos><photo/></photos><owner><name/><email/><phone/></owner></listing></tivvo>
     Field names are the import field keys (see fields.py)."""
     root = _parse(content)
     raws: list[dict] = []

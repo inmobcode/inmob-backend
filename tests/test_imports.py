@@ -32,7 +32,7 @@ KYERO = """<?xml version="1.0" encoding="UTF-8"?>
   </property>
 </root>"""
 
-TIBO = """<tibo version="1">
+TIVVO = """<tivvo version="1">
   <listing>
     <external_id>T-1</external_id>
     <title><en>Loft in Athens</en><el>Loft</el></title>
@@ -42,7 +42,7 @@ TIBO = """<tibo version="1">
     <features><feature>Gym</feature></features>
     <photos><photo>https://img.test/t.jpg</photo></photos>
   </listing>
-</tibo>"""
+</tivvo>"""
 
 
 def _post(client, headers, path, *, fmt, content=None, filename="feed.csv", **form):
@@ -209,12 +209,12 @@ def test_archive_missing_moves_to_trash_but_never_on_empty_feed(app, client, reg
     assert Property.query.count() == 2
 
 
-def test_tibo_xml_feed_with_owner(app, client, register_agency):
+def test_tivvo_xml_feed_with_owner(app, client, register_agency):
     agency = register_agency()
-    res = _post(client, agency["headers"], "apply", fmt="tibo_xml", content=TIBO, filename="tibo.xml", publish="true")
+    res = _post(client, agency["headers"], "apply", fmt="tivvo_xml", content=TIVVO, filename="tivvo.xml", publish="true")
     assert res.get_json()["done"]["create"] == 1
     prop = Property.query.one()
-    assert (prop.source, prop.external_id, prop.title, prop.status) == ("tibo", "T-1", "Loft in Athens", "PUBLISHED")
+    assert (prop.source, prop.external_id, prop.title, prop.status) == ("tivvo", "T-1", "Loft in Athens", "PUBLISHED")
     assert prop.listing_type == "RENT"
     assert prop.owner.email == "maria@example.com"
     assert "Gym" in prop.indoor_amenities
@@ -249,10 +249,17 @@ def test_url_fetch_blocks_internal_addresses(url):
         fetch_feed(url)
 
 
-def test_url_import_rejected_for_table_format(client, register_agency):
+def test_csv_can_be_read_from_a_url(app, client, register_agency, monkeypatch):
     agency = register_agency()
-    res = client.post("/api/imports/preview", headers=agency["headers"], data={"format": "table", "url": "https://example.com/a.csv"})
-    assert res.status_code == 400
+    monkeypatch.setattr("app.services.import_service.fetch_feed", lambda url: (CSV.encode(), "export.csv"))
+    res = client.post(
+        "/api/imports/apply",
+        headers=agency["headers"],
+        data={"format": "table", "url": "https://crm.example.com/export.csv"},
+    )
+    assert res.status_code == 200
+    assert res.get_json()["done"]["create"] == 2
+    assert Property.query.filter_by(external_id="A1").one().source == "csv"
 
 
 def test_malformed_xml_and_wrong_shape_give_a_clear_error(app, client, register_agency):
