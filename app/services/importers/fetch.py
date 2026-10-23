@@ -42,7 +42,7 @@ def fetch_feed(url: str) -> tuple[bytes, str]:
                 timeout=TIMEOUT_SECONDS,
                 stream=True,
                 allow_redirects=False,
-                headers={"User-Agent": "Tivvo-Importer/1.0", "Accept": "application/xml,text/xml,text/csv,*/*"},
+                headers={"User-Agent": "Tivvu-Importer/1.0", "Accept": "application/xml,text/xml,text/csv,*/*"},
             )
         except requests.RequestException as err:
             raise ImportParseError("No se pudo descargar el feed. Revisá que la URL sea pública y esté activa.") from err

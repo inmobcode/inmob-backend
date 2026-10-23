@@ -1,5 +1,5 @@
 """XML feeds: Kyero v3 (what most CRMs in Spain, Portugal, Cyprus and Malta
-export) and Tivvo's own XML (what an agency produces from its own system).
+export) and Tivvu's own XML (what an agency produces from its own system).
 
 Both return raw per-field values for `records.normalize_record`, one dict per
 listing. Parsing goes through defusedxml: feeds come from third parties.
@@ -133,9 +133,9 @@ def parse_kyero(content: bytes) -> list[dict]:
     return raws
 
 
-def parse_tivvo_xml(content: bytes) -> list[dict]:
-    """<tivvo><listing><external_id/><title/>…<features><feature/></features>
-    <photos><photo/></photos><owner><name/><email/><phone/></owner></listing></tivvo>
+def parse_tivvu_xml(content: bytes) -> list[dict]:
+    """<tivvu><listing><external_id/><title/>…<features><feature/></features>
+    <photos><photo/></photos><owner><name/><email/><phone/></owner></listing></tivvu>
     Field names are the import field keys (see fields.py)."""
     root = _parse(content)
     raws: list[dict] = []
@@ -153,7 +153,7 @@ def parse_tivvo_xml(content: bytes) -> list[dict]:
 
 
 def detect_format(content: bytes) -> str:
-    """"kyero" or "tivvo_xml", from the feed itself: a Kyero feed has a <kyero>
+    """"kyero" or "tivvu_xml", from the feed itself: a Kyero feed has a <kyero>
     header or Kyero's own field names (ref, beds, town…) in its <property>
     nodes. People pick the wrong one of the two XML options, and the rows would
     all come out empty, so the content decides."""
@@ -163,8 +163,8 @@ def detect_format(content: bytes) -> str:
     first = next((el for el in root.iter() if _local(el.tag) == "property"), None)
     if first is not None and {_local(c.tag) for c in first} & {"ref", "beds", "baths", "town", "price_freq", "surface_area"}:
         return "kyero"
-    return "tivvo_xml"
+    return "tivvu_xml"
 
 
 def parse_auto(content: bytes) -> list[dict]:
-    return parse_kyero(content) if detect_format(content) == "kyero" else parse_tivvo_xml(content)
+    return parse_kyero(content) if detect_format(content) == "kyero" else parse_tivvu_xml(content)

@@ -21,10 +21,10 @@ RESEND_URL = "https://api.resend.com/emails"
 def _display_name(name: str, locale: str = i18n.DEFAULT_LOCALE) -> str:
     """A safe From display name: no characters that could change which address
     the header points to, no line breaks, short, and marked as sent through
-    Tivvo (in the reader's language) so an agency named like a bank can't pass as one."""
+    Tivvu (in the reader's language) so an agency named like a bank can't pass as one."""
     clean = re.sub(r'[<>"\\\r\n]', " ", name)
     clean = re.sub(r"\s+", " ", clean).strip()[:60].strip()
-    return i18n.t(locale, "via", name=clean) if clean else "Tivvo"
+    return i18n.t(locale, "via", name=clean) if clean else "Tivvu"
 
 
 def _single_line(text: str) -> str:

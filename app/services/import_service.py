@@ -21,8 +21,8 @@ from app.services.importers.fetch import fetch_feed
 from app.services.importers.records import ImportParseError, normalize_record
 from app.utils import rich_text, trash
 
-FORMATS = ("table", "kyero", "tivvo_xml")
-DEFAULT_SOURCE = {"table": "csv", "kyero": "kyero", "tivvo_xml": "tivvo"}
+FORMATS = ("table", "kyero", "tivvu_xml")
+DEFAULT_SOURCE = {"table": "csv", "kyero": "kyero", "tivvu_xml": "tivvu"}
 
 # record key → Property column, for the plain scalar fields.
 SCALAR_FIELDS = (

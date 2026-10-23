@@ -248,7 +248,7 @@ def notify_offer_sent(offer: Offer) -> None:
 
 
 def notify_demo_request(data: dict) -> None:
-    """A prospect asked for a demo from the landing. Goes to the Tivvo team, not an agency."""
+    """A prospect asked for a demo from the landing. Goes to the Tivvu team, not an agency."""
     email_service.send_email(
         current_app.config["TEAM_NOTIFICATION_EMAILS"],
         f"Pedido de demo: {data['agency']}",
@@ -263,10 +263,10 @@ def notify_demo_request(data: dict) -> None:
 
 
 def notify_contact_request(data: dict) -> None:
-    """Someone wrote in from the landing's help/contact page. Goes to the Tivvo team."""
+    """Someone wrote in from the landing's help/contact page. Goes to the Tivvu team."""
     email_service.send_email(
         current_app.config["TEAM_NOTIFICATION_EMAILS"],
-        f"Contacto desde Tivvo: {data['name']}",
+        f"Contacto desde Tivvu: {data['name']}",
         _layout(
             '<h1 style="font-size:20px;margin:0 0 16px">Nuevo mensaje de contacto</h1>'
             f'<p style="margin:0 0 12px"><strong>{escape(data["name"])}</strong> — {escape(data["email"])}</p>'

@@ -117,9 +117,9 @@ def test_confirmation_goes_out_once_a_day_per_address(client, register_agency):
 def test_from_display_name_cannot_change_the_sender_address(app):
     from app.services.email_service import _display_name
 
-    assert _display_name('Banco "Seguro" <ceo@bank.com>\r\nBcc: x@y.com') == "Banco Seguro ceo@bank.com Bcc: x@y.com vía Tivvo"
-    assert _display_name("   ") == "Tivvo"
-    assert len(_display_name("x" * 200)) <= 60 + len(" vía Tivvo")
+    assert _display_name('Banco "Seguro" <ceo@bank.com>\r\nBcc: x@y.com') == "Banco Seguro ceo@bank.com Bcc: x@y.com vía Tivvu"
+    assert _display_name("   ") == "Tivvu"
+    assert len(_display_name("x" * 200)) <= 60 + len(" vía Tivvu")
 
 
 def test_inbox_timestamps_say_they_are_utc(client, register_agency):

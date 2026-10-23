@@ -1,6 +1,6 @@
 """The fields an import can fill, and the column names that usually mean each one.
 
-Every importer (CSV/Excel, Kyero, Tivvo XML) produces records keyed by these
+Every importer (CSV/Excel, Kyero, Tivvu XML) produces records keyed by these
 `key`s; `import_service` is the only place that knows how they land in the
 database. `aliases` also feed the automatic column suggestion for CSV/Excel,
 so they include the RESO Data Dictionary names and the usual Spanish /

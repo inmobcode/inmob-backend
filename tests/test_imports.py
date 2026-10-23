@@ -32,7 +32,7 @@ KYERO = """<?xml version="1.0" encoding="UTF-8"?>
   </property>
 </root>"""
 
-TIVVO = """<tivvo version="1">
+TIVVU = """<tivvu version="1">
   <listing>
     <external_id>T-1</external_id>
     <title><en>Loft in Athens</en><el>Loft</el></title>
@@ -42,7 +42,7 @@ TIVVO = """<tivvo version="1">
     <features><feature>Gym</feature></features>
     <photos><photo>https://img.test/t.jpg</photo></photos>
   </listing>
-</tivvo>"""
+</tivvu>"""
 
 
 def _post(client, headers, path, *, fmt, content=None, filename="feed.csv", **form):
@@ -209,12 +209,12 @@ def test_archive_missing_moves_to_trash_but_never_on_empty_feed(app, client, reg
     assert Property.query.count() == 2
 
 
-def test_tivvo_xml_feed_with_owner(app, client, register_agency):
+def test_tivvu_xml_feed_with_owner(app, client, register_agency):
     agency = register_agency()
-    res = _post(client, agency["headers"], "apply", fmt="tivvo_xml", content=TIVVO, filename="tivvo.xml", publish="true")
+    res = _post(client, agency["headers"], "apply", fmt="tivvu_xml", content=TIVVU, filename="tivvu.xml", publish="true")
     assert res.get_json()["done"]["create"] == 1
     prop = Property.query.one()
-    assert (prop.source, prop.external_id, prop.title, prop.status) == ("tivvo", "T-1", "Loft in Athens", "PUBLISHED")
+    assert (prop.source, prop.external_id, prop.title, prop.status) == ("tivvu", "T-1", "Loft in Athens", "PUBLISHED")
     assert prop.listing_type == "RENT"
     assert prop.owner.email == "maria@example.com"
     assert "Gym" in prop.indoor_amenities
@@ -296,8 +296,8 @@ def test_malformed_xml_and_wrong_shape_give_a_clear_error(app, client, register_
 
 def test_xml_format_is_detected_from_the_content_not_the_choice(app, client, register_agency):
     agency = register_agency()
-    # A Kyero feed sent as "Tivvo XML", and a Tivvo feed sent as "Kyero": both must read fine.
-    kyero_as_tivvo = _post(client, agency["headers"], "preview", fmt="tivvo_xml", content=KYERO, filename="feed.xml")
-    assert kyero_as_tivvo.get_json()["counts"]["create"] == 1
-    tivvo_as_kyero = _post(client, agency["headers"], "preview", fmt="kyero", content=TIVVO, filename="feed.xml")
-    assert tivvo_as_kyero.get_json()["counts"]["create"] == 1
+    # A Kyero feed sent as "Tivvu XML", and a Tivvu feed sent as "Kyero": both must read fine.
+    kyero_as_tivvu = _post(client, agency["headers"], "preview", fmt="tivvu_xml", content=KYERO, filename="feed.xml")
+    assert kyero_as_tivvu.get_json()["counts"]["create"] == 1
+    tivvu_as_kyero = _post(client, agency["headers"], "preview", fmt="kyero", content=TIVVU, filename="feed.xml")
+    assert tivvu_as_kyero.get_json()["counts"]["create"] == 1

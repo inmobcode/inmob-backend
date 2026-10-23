@@ -28,7 +28,7 @@ class Config:
     # Transactional email through Resend. Without an API key, emails are only
     # written to the log, so local development needs no account.
     RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
-    EMAIL_FROM = os.environ.get("EMAIL_FROM", "Tivvo <hello@tivvo.app>")
+    EMAIL_FROM = os.environ.get("EMAIL_FROM", "Tivvu <hello@tivvu.app>")
     # Who gets notified when someone fills the landing's demo or contact form.
     TEAM_NOTIFICATION_EMAILS = [
         address.strip()

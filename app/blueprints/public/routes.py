@@ -187,7 +187,7 @@ def get_public_booking(token):
 
 @bp.route("/sitemap", methods=["GET"])
 def get_sitemap_urls():
-    """Everything crawlable on tivvo.app: each agency's site and its published
+    """Everything crawlable on tivvu.app: each agency's site and its published
     listings. Feeds the frontend's sitemap.xml, so it only carries the slugs
     and timestamps a sitemap entry needs. The `/<agency_slug>` rule can't
     swallow it: Werkzeug matches a static segment before a converter.
@@ -219,7 +219,7 @@ def get_sitemap_urls():
 
 @bp.route("/demo-requests", methods=["POST"])
 def create_demo_request():
-    """The tivvo.app landing's "Pedir una demo" form. Not agency-scoped: it's a prospect, not a client."""
+    """The tivvu.app landing's "Pedir una demo" form. Not agency-scoped: it's a prospect, not a client."""
     try:
         data = DemoRequestSchema().load(request.get_json(silent=True) or {})
     except ValidationError as err:
@@ -230,7 +230,7 @@ def create_demo_request():
 
 @bp.route("/contact-requests", methods=["POST"])
 def create_contact_request():
-    """The tivvo.app landing's help/contact page."""
+    """The tivvu.app landing's help/contact page."""
     try:
         data = ContactRequestSchema().load(request.get_json(silent=True) or {})
     except ValidationError as err:
