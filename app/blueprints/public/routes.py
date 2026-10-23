@@ -2,6 +2,7 @@ from flask import Response, jsonify, request
 from marshmallow import ValidationError
 
 from app.blueprints.public import bp
+from app.i18n import request_locale
 from app.models import Agency, Property
 from app.schemas.agency import AgencyPublicSchema
 from app.schemas.client import PublicInquirySchema
@@ -139,6 +140,7 @@ def create_inquiry(agency_slug):
         inquiry_type=data.get("inquiry_type", "GENERAL"),
         source="WEBSITE",
         property_id=property_id,
+        locale=request_locale(),
     )
     return jsonify({"id": inquiry.id}), 201
 

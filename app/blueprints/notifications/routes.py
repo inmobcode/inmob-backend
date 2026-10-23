@@ -15,6 +15,7 @@ def serialize(notification) -> dict:
         "type": notification.type,
         "title": notification.title,
         "body": notification.body,
+        "params": notification.params,
         "link": notification.link,
         "createdAt": _iso(notification.created_at),
         "readAt": _iso(notification.read_at),
@@ -48,6 +49,13 @@ def mark(notification_id):
     if notification is None:
         return jsonify({"message": "Not found"}), 404
     return jsonify(serialize(notification))
+
+
+@bp.route("/<notification_id>", methods=["DELETE"])
+def remove(notification_id):
+    if not feed.delete(current_user_id(), current_agency_id(), notification_id):
+        return jsonify({"message": "Not found"}), 404
+    return "", 204
 
 
 @bp.route("/read-all", methods=["POST"])

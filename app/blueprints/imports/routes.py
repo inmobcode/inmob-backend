@@ -4,6 +4,8 @@ from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
 
 from app.blueprints.imports import bp
+from app.i18n import request_locale
+from app.i18n.imports import field_label, localize_plan
 from app.services import import_service
 from app.services.importers.fields import IMPORT_FIELDS
 from app.utils.tenancy import current_agency_id, require_role
@@ -53,9 +55,18 @@ def _plan_from_request():
 @require_role("OWNER", "ADMIN")
 def list_fields():
     """What an import can fill: the targets of the column-mapping step."""
+    locale = request_locale()
     return jsonify(
-        [{"key": f.key, "label": f.label, "kind": f.kind} for f in IMPORT_FIELDS],
+        [
+            {"key": f.key, "label": field_label(f.key, f.label, locale) if locale else f.label, "kind": f.kind}
+            for f in IMPORT_FIELDS
+        ],
     )
+
+
+def _in_locale(payload: dict):
+    locale = request_locale()
+    return jsonify(localize_plan(payload, locale) if locale else payload)
 
 
 @bp.route("/preview", methods=["POST"])
@@ -66,7 +77,7 @@ def preview():
         plan = _plan_from_request()
     except import_service.ImportFailure as err:
         return jsonify({"message": err.message}), err.status_code
-    return jsonify(plan.to_dict(limit_rows=PREVIEW_ROWS))
+    return _in_locale(plan.to_dict(limit_rows=PREVIEW_ROWS))
 
 
 @bp.route("/apply", methods=["POST"])
@@ -82,4 +93,4 @@ def apply():
         )
     except import_service.ImportFailure as err:
         return jsonify({"message": err.message}), err.status_code
-    return jsonify({**result, "counts": plan.counts()})
+    return _in_locale({**result, "counts": plan.counts()})

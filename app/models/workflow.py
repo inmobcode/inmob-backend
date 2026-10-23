@@ -36,6 +36,9 @@ class Notification(db.Model):
     type = db.Column(db.String(20), nullable=False)
     title = db.Column(db.String(200), nullable=False)
     body = db.Column(db.String(500), nullable=True)
+    # The values the dashboard renders `type` with in each reader's language
+    # (title/body stay as a written fallback for older rows).
+    params = db.Column(db.JSON, nullable=True)
     # Path inside the dashboard (without the agency slug), e.g. "/offers/<id>".
     link = db.Column(db.String(300), nullable=True)
 

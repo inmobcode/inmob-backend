@@ -1,7 +1,8 @@
+from app import i18n
 from app.extensions import db
-from app.models import Client, Inquiry, Interaction, Offer, Property
+from app.models import Agency, Client, Inquiry, Interaction, Offer, Property
 from app.services import feed
-from app.services.notifications import notify_new_inquiry
+from app.services.notifications import notify_new_inquiry, staff_locale
 from app.utils.tenancy import agent_scope, is_member
 
 
@@ -108,12 +109,16 @@ def log_inquiry(
     source: str,
     property_id: str | None = None,
     offer_id: str | None = None,
+    locale: str | None = None,
 ) -> Inquiry:
     """Dual-write: upsert the Client, log an Interaction on it, and record
     the raw Inquiry — mirrors the Kennedys owner-intake pattern (structured
     lead record + notification), minus the actual email send for now."""
 
     client = find_or_create_client(agency_id, name=name, email=email, phone=phone, source=source)
+    # Remember the language they wrote in: their booking and offer emails use it.
+    if i18n.normalize(locale):
+        client.locale = i18n.normalize(locale)
 
     inquiry = Inquiry(
         agency_id=agency_id,
@@ -128,20 +133,21 @@ def log_inquiry(
     )
     db.session.add(inquiry)
 
-    interaction_label = {
-        "PROPERTY": "Consultó por una propiedad",
-        "OFFER": "Respondió a una oferta",
-        "GENERAL": "Dejó una consulta",
-    }.get(inquiry_type, "Dejó una consulta")
+    # The client's history is read by the team, so the note is in the team's language.
+    agency = db.session.get(Agency, agency_id)
+    lang = staff_locale(agency)
+    interaction_label = i18n.t(
+        lang, {"PROPERTY": "note.property_generic", "OFFER": "note.offer_generic"}.get(inquiry_type, "note.general")
+    )
     # Name what they asked about, so the client's history says which listing or offer.
     if property_id:
         prop = db.session.get(Property, property_id)
         if prop is not None:
-            interaction_label = f"Consultó por «{prop.title}»"
+            interaction_label = i18n.t(lang, "note.property", property=prop.title)
     elif offer_id:
         offer = db.session.get(Offer, offer_id)
         if offer is not None:
-            interaction_label = f"Respondió a la oferta «{offer.title}»"
+            interaction_label = i18n.t(lang, "note.offer", offer=offer.title)
     db.session.add(
         Interaction(
             client_id=client.id,
@@ -151,6 +157,6 @@ def log_inquiry(
     )
 
     db.session.commit()
-    notify_new_inquiry(inquiry)
+    notify_new_inquiry(inquiry, locale)
     feed.notify_inquiry(inquiry, client)
     return inquiry

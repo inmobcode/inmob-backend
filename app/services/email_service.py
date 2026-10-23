@@ -11,18 +11,20 @@ import threading
 import httpx
 from flask import current_app
 
+from app import i18n
+
 logger = logging.getLogger(__name__)
 
 RESEND_URL = "https://api.resend.com/emails"
 
 
-def _display_name(name: str) -> str:
+def _display_name(name: str, locale: str = i18n.DEFAULT_LOCALE) -> str:
     """A safe From display name: no characters that could change which address
     the header points to, no line breaks, short, and marked as sent through
-    Tivvo so an agency named like a bank can't pass as one."""
+    Tivvo (in the reader's language) so an agency named like a bank can't pass as one."""
     clean = re.sub(r'[<>"\\\r\n]', " ", name)
     clean = re.sub(r"\s+", " ", clean).strip()[:60].strip()
-    return f"{clean} vía Tivvo" if clean else "Tivvo"
+    return i18n.t(locale, "via", name=clean) if clean else "Tivvo"
 
 
 def _single_line(text: str) -> str:
@@ -50,6 +52,7 @@ def send_email(
     *,
     reply_to: str | None = None,
     from_name: str | None = None,
+    locale: str = i18n.DEFAULT_LOCALE,
 ) -> None:
     """Queues an email. `from_name` replaces the display name of EMAIL_FROM
     (sanitized, see _display_name) so a client's confirmation shows the agency."""
@@ -60,7 +63,7 @@ def send_email(
     sender = current_app.config["EMAIL_FROM"]
     if from_name:
         address = sender.split("<")[-1].rstrip(">").strip()
-        sender = f'"{_display_name(from_name)}" <{address}>'
+        sender = f'"{_display_name(from_name, locale)}" <{address}>'
 
     payload = {"from": sender, "to": recipients, "subject": _single_line(subject), "html": html}
     if reply_to:

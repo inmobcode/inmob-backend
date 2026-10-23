@@ -3,6 +3,8 @@ from html import escape
 
 from flask import current_app
 
+from app import i18n
+
 from app.extensions import db
 from app.models import Agency, AgencyMembership, User
 from app.services import email_service
@@ -15,23 +17,26 @@ class TeamError(Exception):
         self.status_code = status_code
 
 
-def _send_invite_email(to_email: str, name: str, agency: Agency, temp_password: str) -> None:
-    login_url = f"{current_app.config['FRONTEND_URL'].rstrip('/')}/login"
+def _send_invite_email(to_email: str, name: str, agency: Agency, temp_password: str, locale: str) -> None:
+    login_url = f"{current_app.config['FRONTEND_URL'].rstrip('/')}/login?lang={locale}"
     email_service.send_email(
         [to_email],
-        f"Te invitaron a {agency.name} en Tivvo",
+        i18n.t(locale, "invite.subject", agency=agency.name),
         '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;'
         'line-height:1.55;color:#1b201e;max-width:560px;margin:0 auto;padding:24px">'
-        f'<h1 style="font-size:20px;margin:0 0 16px">Hola {escape(name)}</h1>'
-        f'<p style="margin:0 0 12px">Ya tenés acceso a <strong>{escape(agency.name)}</strong> en Tivvo.</p>'
-        f'<p style="margin:0 0 12px">Email: {escape(to_email)}<br>'
-        f'Contraseña temporal: <strong>{escape(temp_password)}</strong></p>'
+        f'<h1 style="font-size:20px;margin:0 0 16px">{escape(i18n.t(locale, "invite.hello", name=name))}</h1>'
+        '<p style="margin:0 0 12px">'
+        + escape(i18n.t(locale, "invite.access", agency="\0")).replace("\0", f"<strong>{escape(agency.name)}</strong>")
+        + "</p>"
+        f'<p style="margin:0 0 12px">{escape(i18n.t(locale, "invite.email"))}: {escape(to_email)}<br>'
+        f'{escape(i18n.t(locale, "invite.password"))}: <strong>{escape(temp_password)}</strong></p>'
         f'<p style="margin:24px 0 0"><a href="{login_url}" style="background:#164832;color:#fff;'
-        'padding:10px 16px;border-radius:8px;text-decoration:none">Entrar</a></p>'
+        f'padding:10px 16px;border-radius:8px;text-decoration:none">{escape(i18n.t(locale, "invite.enter"))}</a></p>'
         '<p style="margin:16px 0 0;color:#646b67;font-size:13px">'
-        "Te recomendamos cambiar la contraseña la primera vez que entres.</p>"
+        f'{escape(i18n.t(locale, "invite.change"))}</p>'
         "</div>",
         from_name=agency.name,
+        locale=locale,
     )
 
 
@@ -68,14 +73,16 @@ def invite_member(agency_id: str, data: dict) -> tuple[User, bool]:
         return user, True
 
     temp_password = secrets.token_urlsafe(9)
-    user = User(agency_id=agency_id, name=data["name"], email=email, role=role)
+    # They start in the language of whoever invited them; the dashboard keeps it in sync afterwards.
+    locale = i18n.pick(i18n.request_locale(), agency.locale)
+    user = User(agency_id=agency_id, name=data["name"], email=email, role=role, locale=locale)
     user.set_password(temp_password)
     db.session.add(user)
     db.session.flush()  # assigns user.id for the membership FK below
     db.session.add(AgencyMembership(user_id=user.id, agency_id=agency_id, role=role))
     db.session.commit()
 
-    _send_invite_email(email, data["name"], agency, temp_password)
+    _send_invite_email(email, data["name"], agency, temp_password, locale)
 
     return user, False
 

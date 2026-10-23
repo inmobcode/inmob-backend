@@ -231,6 +231,18 @@ def test_notifications_are_private_per_user(client, register_agency):
     item = client.get("/api/notifications/", headers=owner["headers"]).get_json()["items"][0]
     res = client.patch(f"/api/notifications/{item['id']}", headers=agent["headers"], json={"read": True})
     assert res.status_code == 404
+    assert client.delete(f"/api/notifications/{item['id']}", headers=agent["headers"]).status_code == 404
+
+
+def test_notification_can_be_deleted(client, register_agency):
+    owner = register_agency(agency_name="Agencia B", email="b@demo.com")
+    client.post("/api/public/agencia-b/inquiries", json={"name": "Ana", "email": "ana@demo.com"})
+    item = client.get("/api/notifications/", headers=owner["headers"]).get_json()["items"][0]
+
+    assert client.delete(f"/api/notifications/{item['id']}", headers=owner["headers"]).status_code == 204
+    bell = client.get("/api/notifications/", headers=owner["headers"]).get_json()
+    assert bell == {"unread": 0, "items": []}
+    assert client.delete(f"/api/notifications/{item['id']}", headers=owner["headers"]).status_code == 404
 
 
 # --- dashboard -----------------------------------------------------------

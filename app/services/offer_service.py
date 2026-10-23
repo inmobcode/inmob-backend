@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import selectinload
 
+from app import i18n
 from app.extensions import db
+from app.models.agency import Agency
 from app.models.booking import Booking
 from app.models.client import Client, Interaction
 from app.models.offer import Offer, OfferProperty, OfferSection, OfferService
@@ -11,7 +13,7 @@ from app.models.property import Property
 from app.schemas.property import PropertySchema, PublicPropertySchema
 from app.services import crm_service, feed
 from app.services.property_service import property_load_options
-from app.services.notifications import notify_offer_sent
+from app.services.notifications import notify_offer_sent, staff_locale
 from app.utils import rich_text, trash
 from app.utils.tenancy import agent_scope
 
@@ -329,7 +331,12 @@ def send_offer(agency_id: str, offer_id: str) -> Offer:
             Interaction(
                 client_id=client.id,
                 type="EMAIL",
-                content=f"Se le envió la oferta «{offer.title}» a {client.email}.",
+                content=i18n.t(
+                    staff_locale(db.session.get(Agency, offer.agency_id)),
+                    "note.offer_sent",
+                    offer=offer.title,
+                    email=client.email,
+                ),
             )
         )
     db.session.commit()
@@ -373,6 +380,7 @@ def create_public_offer_inquiry(token: str, data: dict) -> Offer:
         inquiry_type="OFFER",
         source="OFFER",
         offer_id=offer.id,
+        locale=i18n.request_locale(),
     )
 
     if not offer.client_id:

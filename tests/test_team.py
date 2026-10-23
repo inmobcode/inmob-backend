@@ -27,7 +27,7 @@ def test_invite_creates_new_user_and_emails_temp_password(client):
     assert body["linkedExisting"] is False
     assert body["role"] == "AGENT"
     mock_send.assert_called_once()
-    to_email, name, agency, temp_password = mock_send.call_args[0]
+    to_email, name, agency, temp_password, locale = mock_send.call_args[0]
     assert to_email == "agent1@demo.com"
     assert agency.name == "Agencia Demo"
 

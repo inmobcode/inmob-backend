@@ -5,21 +5,48 @@ from flask import current_app
 from sqlalchemy import func
 
 from app.extensions import db
-from app.models import Agency, Booking, Client, Inquiry, Offer, Property, User
+from app import i18n
+from app.models import Agency, AgencyMembership, Booking, Client, Inquiry, Offer, Property, User
 from app.services import email_service
 from app.utils import rich_text
 
 
-def _agency_recipients(agency: Agency) -> list[str]:
-    """The agency's contact email if it set one, otherwise its owners and admins."""
+def staff_locale(agency: Agency) -> str:
+    """The language the agency's team works in: its owner's dashboard language,
+    else the site's. Used for things the whole team reads (history notes, the
+    shared contact inbox)."""
+    owner = (
+        User.query.join(AgencyMembership, AgencyMembership.user_id == User.id)
+        .filter(AgencyMembership.agency_id == agency.id, AgencyMembership.role == "OWNER", User.locale.isnot(None))
+        .order_by(AgencyMembership.created_at)
+        .first()
+    )
+    return i18n.pick(owner.locale if owner else None, agency.locale)
+
+
+def client_locale(client: Client | None, agency: Agency) -> str:
+    """A client reads in the language they wrote in, else the agency site's."""
+    return i18n.pick(client.locale if client else None, agency.locale)
+
+
+def _agency_recipients(agency: Agency) -> list[tuple[str, str]]:
+    """(email, language) of who hears about the agency's inquiries: its contact
+    email if it set one, otherwise its owners and admins, each in their own language."""
     if agency.contact_email:
-        return [agency.contact_email]
+        return [(agency.contact_email, staff_locale(agency))]
     users = User.query.filter(
         User.agency_id == agency.id,
         User.role.in_(("OWNER", "ADMIN")),
         User.is_active.is_(True),
     ).all()
-    return [user.email for user in users]
+    return [(user.email, i18n.pick(user.locale, agency.locale)) for user in users]
+
+
+def _by_locale(recipients: list[tuple[str, str]]) -> dict[str, list[str]]:
+    groups: dict[str, list[str]] = {}
+    for email, locale in recipients:
+        groups.setdefault(locale, []).append(email)
+    return groups
 
 
 def _paragraphs(text: str) -> str:
@@ -34,64 +61,100 @@ def _layout(body: str) -> str:
     )
 
 
-def notify_new_inquiry(inquiry: Inquiry) -> None:
+def _button(url: str, label: str, color: str = "#1b201e") -> str:
+    return (
+        f'<p style="margin:24px 0 0"><a href="{url}" style="background:{color};color:#fff;'
+        f'padding:10px 16px;border-radius:8px;text-decoration:none">{escape(label)}</a></p>'
+    )
+
+
+def _muted(text: str) -> str:
+    return f'<p style="margin:16px 0 0;color:#646b67;font-size:13px">{escape(text)}</p>'
+
+
+def public_url(locale: str, path: str) -> str:
+    """A link to the public site in the reader's language (/en/booking/…; Spanish has no prefix)."""
+    return f"{current_app.config['PUBLIC_SITE_URL'].rstrip('/')}{i18n.public_path(locale, path)}"
+
+
+def notify_new_inquiry(inquiry: Inquiry, locale: str | None = None) -> None:
     """Tells the agency a question arrived, and tells the person it was received.
 
-    Both go out through email_service, which only logs them when no email
-    provider is configured.
+    The agency hears in each recipient's language; the person, in the one they
+    wrote in (`locale`, from the public site) or the site's. Both go out through
+    email_service, which only logs them when no email provider is configured.
     """
     agency = db.session.get(Agency, inquiry.agency_id)
     if agency is None:
         return
     prop = db.session.get(Property, inquiry.property_id) if inquiry.property_id else None
-    about = f"«{prop.title}»" if prop else "tu inmobiliaria"
-    current_app.logger.info("New inquiry for agency %s: %s <%s> about %s", agency.id, inquiry.name, inquiry.email, about)
+    current_app.logger.info(
+        "New inquiry for agency %s: %s <%s> about %s",
+        agency.id, inquiry.name, inquiry.email, prop.title if prop else "the agency",
+    )
 
     inbox_url = f"{current_app.config['FRONTEND_URL'].rstrip('/')}/inquiries"
-    details = [
-        ("Nombre", inquiry.name),
-        ("Email", inquiry.email),
-        ("Teléfono", inquiry.phone),
-        ("Propiedad", prop.title if prop else None),
-    ]
-    rows = "".join(
-        f'<tr><td style="padding:4px 16px 4px 0;color:#646b67">{label}</td><td style="padding:4px 0">{escape(value)}</td></tr>'
-        for label, value in details
-        if value
-    )
-    message = _paragraphs(inquiry.message) if inquiry.message else '<p style="color:#646b67">Sin mensaje.</p>'
-    email_service.send_email(
-        _agency_recipients(agency),
-        f"Nueva consulta de {inquiry.name}" + (f" por {prop.title}" if prop else ""),
-        _layout(
-            f'<h1 style="font-size:20px;margin:0 0 16px">Nueva consulta por {escape(about)}</h1>'
-            f'<table style="border-collapse:collapse;margin:0 0 16px">{rows}</table>'
-            f"{message}"
-            f'<p style="margin:24px 0 0"><a href="{inbox_url}" style="background:#164832;color:#fff;'
-            f'padding:10px 16px;border-radius:8px;text-decoration:none">Ver en Consultas</a></p>'
-            '<p style="margin:16px 0 0;color:#646b67;font-size:13px">Respondé este email para escribirle directamente.</p>'
-        ),
-        reply_to=inquiry.email,
-    )
+    for lang, recipients in _by_locale(_agency_recipients(agency)).items():
+        details = [
+            (i18n.t(lang, "alert.name"), inquiry.name),
+            (i18n.t(lang, "alert.email"), inquiry.email),
+            (i18n.t(lang, "alert.phone"), inquiry.phone),
+            (i18n.t(lang, "alert.property"), prop.title if prop else None),
+        ]
+        rows = "".join(
+            f'<tr><td style="padding:4px 16px 4px 0;color:#646b67">{escape(label)}</td><td style="padding:4px 0">{escape(value)}</td></tr>'
+            for label, value in details
+            if value
+        )
+        message = (
+            _paragraphs(inquiry.message)
+            if inquiry.message
+            else f'<p style="color:#646b67">{escape(i18n.t(lang, "alert.no_message"))}</p>'
+        )
+        subject = (
+            i18n.t(lang, "alert.subject_property", name=inquiry.name, property=prop.title)
+            if prop
+            else i18n.t(lang, "alert.subject", name=inquiry.name)
+        )
+        heading = (
+            i18n.t(lang, "alert.heading_property", property=prop.title) if prop else i18n.t(lang, "alert.heading_general")
+        )
+        email_service.send_email(
+            recipients,
+            subject,
+            _layout(
+                f'<h1 style="font-size:20px;margin:0 0 16px">{escape(heading)}</h1>'
+                f'<table style="border-collapse:collapse;margin:0 0 16px">{rows}</table>'
+                f"{message}"
+                + _button(inbox_url, i18n.t(lang, "alert.open"), "#164832")
+                + _muted(i18n.t(lang, "alert.reply_hint"))
+            ),
+            reply_to=inquiry.email,
+            locale=lang,
+        )
 
     # The confirmation goes to whatever address was typed in a public form, so it
     # must not become a way to email strangers: it carries none of the text the
     # sender wrote, and each address gets at most one per agency a day.
     if _confirmed_recently(inquiry):
         return
+    lang = i18n.pick(locale, agency.locale)
     email_service.send_email(
         [inquiry.email],
-        "Recibimos tu consulta" + (f" por {prop.title}" if prop else ""),
+        i18n.t(lang, "confirm.subject_property", property=prop.title) if prop else i18n.t(lang, "confirm.subject"),
         _layout(
-            '<h1 style="font-size:20px;margin:0 0 16px">Recibimos tu consulta</h1>'
-            f'<p style="margin:0 0 12px">Gracias por escribirnos sobre {escape(about)}. '
-            "Te vamos a responder por email o por teléfono a la brevedad.</p>"
+            f'<h1 style="font-size:20px;margin:0 0 16px">{escape(i18n.t(lang, "confirm.heading"))}</h1>'
+            '<p style="margin:0 0 12px">'
+            + escape(
+                i18n.t(lang, "confirm.body_property", property=prop.title) if prop else i18n.t(lang, "confirm.body_general")
+            )
+            + "</p>"
             f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
-            '<p style="margin:16px 0 0;color:#646b67;font-size:13px">'
-            "Si no hiciste esta consulta, podés ignorar este email.</p>"
+            + _muted(i18n.t(lang, "confirm.ignore"))
         ),
         reply_to=agency.contact_email,
         from_name=agency.name,
+        locale=lang,
     )
 
 
@@ -111,98 +174,76 @@ def _confirmed_recently(inquiry: Inquiry) -> bool:
     return earlier > 0
 
 
-MONTHS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
-          "septiembre", "octubre", "noviembre", "diciembre")
-
-# Subject, heading and first line of each email the client gets about a booking.
-BOOKING_EMAILS = {
-    "created": (
-        "Tu reserva en {property}",
-        "Recibimos tu reserva",
-        "Registramos tu reserva en {property}. Te avisamos por este medio cuando esté confirmada.",
-    ),
-    "confirmed": (
-        "Reserva confirmada: {property}",
-        "Tu reserva está confirmada",
-        "Confirmamos tu reserva en {property}.",
-    ),
-    "cancelled": (
-        "Reserva cancelada: {property}",
-        "Tu reserva fue cancelada",
-        "Cancelamos tu reserva en {property}. Si tenés dudas, respondé este email.",
-    ),
-}
-
-
-def _long_date(day) -> str:
-    return f"{day.day} de {MONTHS[day.month - 1]} de {day.year}"
-
-
-def booking_url(booking: Booking) -> str:
-    return f"{current_app.config['PUBLIC_SITE_URL'].rstrip('/')}/booking/{booking.token}"
+def booking_url(booking: Booking, locale: str = i18n.DEFAULT_LOCALE) -> str:
+    return public_url(locale, f"/booking/{booking.token}")
 
 
 def notify_booking(booking: Booking, event: str) -> None:
     """Tells the booking's client it was created, confirmed or cancelled, with
-    the link to their booking page. Without a client (or its email) nothing
-    goes out."""
+    the link to their booking page, in their language. Without a client (or
+    its email) nothing goes out."""
     client = booking.client
     if client is None or not client.email:
         return
     agency = db.session.get(Agency, booking.agency_id)
-    title = booking.property.title if booking.property else "la propiedad"
-    subject, heading, lead = BOOKING_EMAILS[event]
+    lang = client_locale(client, agency)
+    title = booking.property.title if booking.property else i18n.t(lang, "booking.the_property")
 
     dates = ""
     if booking.start_date and booking.end_date:
-        dates = (
-            '<p style="margin:0 0 12px">'
-            f"Del {_long_date(booking.start_date)} al {_long_date(booking.end_date)}.</p>"
-        )
+        dates = '<p style="margin:0 0 12px">' + escape(
+            i18n.t(
+                lang,
+                "booking.dates",
+                start=i18n.long_date(lang, booking.start_date),
+                end=i18n.long_date(lang, booking.end_date),
+            )
+        ) + "</p>"
     first_name = client.name.split()[0] if client.name.strip() else ""
     email_service.send_email(
         [client.email],
-        subject.format(property=title),
+        i18n.t(lang, f"booking.{event}.subject", property=title),
         _layout(
-            f'<h1 style="font-size:20px;margin:0 0 16px">{heading}</h1>'
-            + (f'<p style="margin:0 0 12px">Hola {escape(first_name)},</p>' if first_name else "")
-            + f'<p style="margin:0 0 12px">{escape(lead.format(property=title))}</p>'
+            f'<h1 style="font-size:20px;margin:0 0 16px">{escape(i18n.t(lang, f"booking.{event}.heading"))}</h1>'
+            + (f'<p style="margin:0 0 12px">{escape(i18n.t(lang, "booking.hello", name=first_name))}</p>' if first_name else "")
+            + f'<p style="margin:0 0 12px">{escape(i18n.t(lang, f"booking.{event}.lead", property=title))}</p>'
             + dates
-            + f'<p style="margin:24px 0 0"><a href="{booking_url(booking)}" style="background:#1b201e;color:#fff;'
-            'padding:10px 16px;border-radius:8px;text-decoration:none">Ver mi reserva</a></p>'
-            f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
+            + _button(booking_url(booking, lang), i18n.t(lang, "booking.view"))
+            + f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
         ),
         reply_to=agency.contact_email,
         from_name=agency.name,
+        locale=lang,
     )
 
 
 def notify_offer_sent(offer: Offer) -> None:
-    """Emails the offer's CRM client the link to the offer. Without a linked
-    client nothing goes out: the agency shares the link by hand."""
+    """Emails the offer's CRM client the link to the offer, in their language.
+    Without a linked client nothing goes out: the agency shares the link by hand."""
     client = db.session.get(Client, offer.client_id) if offer.client_id else None
     if client is None or not client.email:
         return
     agency = db.session.get(Agency, offer.agency_id)
-    url = f"{current_app.config['PUBLIC_SITE_URL'].rstrip('/')}/offer/{offer.token}"
+    lang = client_locale(client, agency)
+    url = public_url(lang, f"/offer/{offer.token}")
     first_name = client.name.split()[0] if client.name.strip() else ""
     # Stored already clean; sanitize also turns older plain text into paragraphs.
     welcome = rich_text.sanitize(offer.welcome_content) or ""
     email_service.send_email(
         [client.email],
-        f"{agency.name} te envió una propuesta: {offer.title}",
+        i18n.t(lang, "offer.subject", agency=agency.name, title=offer.title),
         _layout(
             f'<h1 style="font-size:20px;margin:0 0 16px">{escape(offer.title)}</h1>'
-            + (f'<p style="margin:0 0 12px">Hola {escape(first_name)},</p>' if first_name else "")
-            + f'<p style="margin:0 0 12px">{escape(agency.name)} preparó esta propuesta para vos.</p>'
+            + (f'<p style="margin:0 0 12px">{escape(i18n.t(lang, "offer.hello", name=first_name))}</p>' if first_name else "")
+            + f'<p style="margin:0 0 12px">{escape(i18n.t(lang, "offer.lead", agency=agency.name))}</p>'
             + welcome
-            + f'<p style="margin:24px 0 0"><a href="{url}" style="background:#1b201e;color:#fff;'
-            'padding:10px 16px;border-radius:8px;text-decoration:none">Ver la propuesta</a></p>'
-            f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
-            '<p style="margin:16px 0 0;color:#646b67;font-size:13px">Respondé este email para escribirle a la agencia.</p>'
+            + _button(url, i18n.t(lang, "offer.view"))
+            + f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
+            + _muted(i18n.t(lang, "offer.reply_hint"))
         ),
         reply_to=agency.contact_email,
         from_name=agency.name,
+        locale=lang,
     )
 
 

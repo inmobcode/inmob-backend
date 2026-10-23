@@ -27,6 +27,9 @@ class User(db.Model, TimestampMixin):
     role = db.Column(db.String(20), nullable=False, default="AGENT")
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     avatar_url = db.Column(db.String(500), nullable=True)
+    # The language they use the dashboard in (synced from the X-Locale header);
+    # emails meant for them go out in it. Null until they first use the app.
+    locale = db.Column(db.String(5), nullable=True)
 
     agency = db.relationship("Agency", back_populates="users")
     memberships = db.relationship(

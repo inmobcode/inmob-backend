@@ -19,6 +19,7 @@ def create_app(config_class: type = Config) -> Flask:
         from app import models  # noqa: F401  (registers models on db.metadata)
 
     register_blueprints(app)
+    register_locale_hooks(app)
 
     @app.route("/api/health")
     def health():
@@ -39,6 +40,43 @@ def register_jwt_error_handlers(app: Flask) -> None:
     @jwt.expired_token_loader
     def _expired_token(_jwt_header, _jwt_payload):
         return jsonify({"message": "Token expired"}), 401
+
+
+def register_locale_hooks(app: Flask) -> None:
+    """The frontend sends the page's language in X-Locale: error bodies come
+    back in it, and a signed-in user's language is remembered for their emails."""
+    from flask import request
+    from flask_jwt_extended import get_jwt_identity, verify_jwt_in_request
+
+    from app.i18n import request_locale
+    from app.i18n.errors import localize_payload
+    from app.models import User
+
+    @app.before_request
+    def _remember_user_locale():
+        locale = request_locale()
+        if not locale or not request.headers.get("Authorization"):
+            return
+        try:
+            verify_jwt_in_request(optional=True)
+            user_id = get_jwt_identity()
+        except Exception:  # noqa: BLE001 - a bad token is the route's business, not ours
+            return
+        if not user_id:
+            return
+        user = db.session.get(User, user_id)
+        if user is not None and user.locale != locale:
+            user.locale = locale
+            db.session.commit()
+
+    @app.after_request
+    def _localize_errors(response):
+        locale = request_locale()
+        if locale and response.status_code >= 400 and response.is_json:
+            payload = response.get_json(silent=True)
+            if isinstance(payload, dict):
+                response.set_data(app.json.dumps(localize_payload(payload, locale)))
+        return response
 
 
 def register_blueprints(app: Flask) -> None:

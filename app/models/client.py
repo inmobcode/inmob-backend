@@ -21,6 +21,9 @@ class Client(db.Model, TimestampMixin):
     source = db.Column(db.String(20), nullable=False, default="MANUAL")
     stage = db.Column(db.String(20), nullable=False, default="LEAD")
     notes = db.Column(db.Text, nullable=True)
+    # The language they last wrote to the agency in (from its public site);
+    # booking and offer emails use it before falling back to the site's.
+    locale = db.Column(db.String(5), nullable=True)
 
     interactions = db.relationship(
         "Interaction",
