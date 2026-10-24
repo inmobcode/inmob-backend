@@ -19,6 +19,7 @@ class ServiceSchema(Schema):
     cancellation_policy = fields.Str(data_key="cancellationPolicy", allow_none=True, validate=validate.Length(max=4000))
     created_at = fields.DateTime(data_key="createdAt", dump_only=True)
     updated_at = fields.DateTime(data_key="updatedAt", dump_only=True)
+    deleted_at = fields.DateTime(data_key="deletedAt", dump_only=True)
 
 
 class OfferServiceItemSchema(Schema):

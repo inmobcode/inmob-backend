@@ -122,7 +122,9 @@ def _sync_services(agency_id: str, offer: Offer, items: list[dict]) -> None:
     offer.offer_services.clear()
     ids = {item["service_id"] for item in items if item.get("service_id")}
     own = (
-        {service.id for service in Service.query.filter(Service.agency_id == agency_id, Service.id.in_(ids)).all()}
+        {service.id for service in Service.query.filter(
+                Service.agency_id == agency_id, Service.deleted_at.is_(None), Service.id.in_(ids)
+            ).all()}
         if ids
         else set()
     )

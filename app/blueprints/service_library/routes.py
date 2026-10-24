@@ -33,6 +33,12 @@ def create_service():
     return jsonify(service_schema.dump(service)), 201
 
 
+@bp.route("/trash", methods=["GET"])
+def list_trashed_services():
+    """What's in the trash; anything older than TRASH_DAYS is deleted for good first."""
+    return jsonify(services_schema.dump(service_library.list_trashed_services(current_agency_id())))
+
+
 @bp.route("/<service_id>", methods=["GET"])
 def get_service(service_id):
     try:
@@ -58,6 +64,24 @@ def update_service(service_id):
 def delete_service(service_id):
     try:
         service_library.delete_service(current_agency_id(), service_id)
+    except service_library.ServiceError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return "", 204
+
+
+@bp.route("/<service_id>/restore", methods=["POST"])
+def restore_service(service_id):
+    try:
+        service = service_library.restore_service(current_agency_id(), service_id)
+    except service_library.ServiceError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(service_schema.dump(service))
+
+
+@bp.route("/<service_id>/permanent", methods=["DELETE"])
+def delete_service_forever(service_id):
+    try:
+        service_library.delete_service_forever(current_agency_id(), service_id)
     except service_library.ServiceError as err:
         return jsonify({"message": err.message}), err.status_code
     return "", 204

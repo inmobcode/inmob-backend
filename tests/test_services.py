@@ -26,6 +26,45 @@ def test_service_library_crud_is_scoped_to_the_agency(client, register_agency):
     assert client.get("/api/services/", headers=agency["headers"]).get_json() == []
 
 
+def test_deleted_service_goes_to_trash_and_comes_back(client, register_agency):
+    agency = register_agency()
+    other = register_agency(agency_name="Otra", email="owner@otra.com")
+    headers = agency["headers"]
+    service = _service(client, headers).get_json()
+
+    assert client.delete(f"/api/services/{service['id']}", headers=headers).status_code == 204
+    assert client.get("/api/services/", headers=headers).get_json() == []
+    assert client.get(f"/api/services/{service['id']}", headers=headers).status_code == 404
+    trashed = client.get("/api/services/trash", headers=headers).get_json()
+    assert [item["id"] for item in trashed] == [service["id"]] and trashed[0]["deletedAt"]
+    assert client.get("/api/services/trash", headers=other["headers"]).get_json() == []
+    assert client.post(f"/api/services/{service['id']}/restore", headers=other["headers"]).status_code == 404
+
+    # Only what is in the trash can be deleted for good.
+    live = _service(client, headers, name="Yate").get_json()
+    assert client.delete(f"/api/services/{live['id']}/permanent", headers=headers).status_code == 404
+
+    restored = client.post(f"/api/services/{service['id']}/restore", headers=headers)
+    assert restored.status_code == 200 and restored.get_json()["deletedAt"] is None
+    assert len(client.get("/api/services/", headers=headers).get_json()) == 2
+
+    client.delete(f"/api/services/{service['id']}", headers=headers)
+    assert client.delete(f"/api/services/{service['id']}/permanent", headers=headers).status_code == 204
+    assert client.get("/api/services/trash", headers=headers).get_json() == []
+
+
+def test_trashed_service_cant_be_linked_to_an_offer(client, register_agency):
+    headers = register_agency()["headers"]
+    service = _service(client, headers).get_json()
+    client.delete(f"/api/services/{service['id']}", headers=headers)
+    offer = client.post(
+        "/api/offers/",
+        headers=headers,
+        json={"title": "Oferta", "sections": [], "services": [{"serviceId": service["id"], "name": "Chef privado"}]},
+    ).get_json()
+    assert offer["services"][0]["serviceId"] is None
+
+
 def test_service_validation(client, register_agency):
     agency = register_agency()
     assert _service(client, agency["headers"], type="SPACESHIP").status_code == 400
@@ -55,8 +94,11 @@ def test_offer_keeps_its_own_copy_of_services_and_totals_them(client, register_a
     assert body["services"][1]["unitPrice"] is None and body["services"][1]["date"] == "2026-12-20"
     assert body["servicesTotal"] == 750
 
-    # Deleting from the library doesn't touch the offer.
+    # Trashing it from the library doesn't touch the offer; deleting it for good only cuts the link.
     client.delete(f"/api/services/{library['id']}", headers=headers)
+    again = client.get(f"/api/offers/{offer['id']}", headers=headers).get_json()
+    assert again["services"][0]["name"] == "Chef privado" and again["services"][0]["serviceId"] == library["id"]
+    client.delete(f"/api/services/{library['id']}/permanent", headers=headers)
     again = client.get(f"/api/offers/{offer['id']}", headers=headers).get_json()
     assert again["services"][0]["name"] == "Chef privado" and again["services"][0]["serviceId"] is None
 

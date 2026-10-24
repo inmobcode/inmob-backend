@@ -1,5 +1,5 @@
 from app.extensions import db
-from app.models.base import TimestampMixin, uuid_pk
+from app.models.base import TimestampMixin, TrashMixin, uuid_pk
 
 # What an agency can add to a stay: people, boats, rides, outings.
 SERVICE_TYPES = (
@@ -19,7 +19,7 @@ SERVICE_TYPES = (
 SERVICE_UNITS = ("SERVICE", "PERSON", "DAY", "NIGHT", "HOUR")
 
 
-class Service(db.Model, TimestampMixin):
+class Service(db.Model, TimestampMixin, TrashMixin):
     """A service or experience in an agency's library, ready to add to offers."""
 
     __tablename__ = "services"
