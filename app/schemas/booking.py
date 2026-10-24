@@ -1,18 +1,31 @@
 from marshmallow import Schema, fields, validate
 
-from app.models.booking import PAYMENT_TYPES
+from app.models.booking import PAYMENT_STATUSES, PAYMENT_TYPES
+
+_POSITIVE = validate.Range(min=0, min_inclusive=False)
 
 
 class PaymentSchema(Schema):
     id = fields.Str(dump_only=True)
     booking_id = fields.Str(data_key="bookingId", dump_only=True)
-    amount = fields.Float(required=True)
+    amount = fields.Float(required=True, validate=_POSITIVE)
     currency = fields.Str(load_default="USD", validate=validate.Length(equal=3))
     type = fields.Str(validate=validate.OneOf(PAYMENT_TYPES))
-    status = fields.Str(dump_only=True)
-    paid_at = fields.DateTime(data_key="paidAt", dump_only=True, allow_none=True)
-    method = fields.Str(allow_none=True)
+    # Registering one that's already collected skips the "mark as paid" step.
+    status = fields.Str(load_default="PENDING", validate=validate.OneOf(PAYMENT_STATUSES))
+    paid_at = fields.DateTime(data_key="paidAt", allow_none=True)
+    method = fields.Str(allow_none=True, validate=validate.Length(max=50))
+    note = fields.Str(allow_none=True, validate=validate.Length(max=200))
     created_at = fields.DateTime(data_key="createdAt", dump_only=True)
+
+
+class PaymentUpdateSchema(Schema):
+    amount = fields.Float(validate=_POSITIVE)
+    type = fields.Str(validate=validate.OneOf(PAYMENT_TYPES))
+    status = fields.Str(validate=validate.OneOf(PAYMENT_STATUSES))
+    paid_at = fields.DateTime(data_key="paidAt", allow_none=True)
+    method = fields.Str(allow_none=True, validate=validate.Length(max=50))
+    note = fields.Str(allow_none=True, validate=validate.Length(max=200))
 
 
 class BookingSchema(Schema):
@@ -28,6 +41,8 @@ class BookingSchema(Schema):
     total_price = fields.Float(data_key="totalPrice", allow_none=True)
     currency = fields.Str(load_default="USD", validate=validate.Length(equal=3))
     commission_amount = fields.Float(data_key="commissionAmount", allow_none=True)
+    guests = fields.Int(allow_none=True, validate=validate.Range(min=1, max=999))
+    notes = fields.Str(allow_none=True, validate=validate.Length(max=5000))
     created_at = fields.DateTime(data_key="createdAt", dump_only=True)
     updated_at = fields.DateTime(data_key="updatedAt", dump_only=True)
     deleted_at = fields.DateTime(data_key="deletedAt", dump_only=True)
@@ -50,3 +65,5 @@ class BookingUpdateSchema(Schema):
     currency = fields.Str(validate=validate.Length(equal=3))
     commission_amount = fields.Float(data_key="commissionAmount", allow_none=True)
     client_id = fields.Str(data_key="clientId", allow_none=True)
+    guests = fields.Int(allow_none=True, validate=validate.Range(min=1, max=999))
+    notes = fields.Str(allow_none=True, validate=validate.Length(max=5000))

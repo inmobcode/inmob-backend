@@ -55,6 +55,17 @@ class Property(db.Model, TimestampMixin, TrashMixin):
     price = db.Column(db.Float, nullable=True)
     currency = db.Column(db.String(3), nullable=False, default="USD")
 
+    # Pricing rules for rentals (app/services/pricing.py): a minimum stay for
+    # the whole year (a rate period can ask for more), discounts for long
+    # stays, and one for the timing of the booking.
+    min_stay = db.Column(db.Integer, nullable=True)
+    weekly_discount_pct = db.Column(db.Float, nullable=True)
+    monthly_discount_pct = db.Column(db.Float, nullable=True)
+    last_minute_discount_pct = db.Column(db.Float, nullable=True)
+    last_minute_days = db.Column(db.Integer, nullable=True)
+    early_bird_discount_pct = db.Column(db.Float, nullable=True)
+    early_bird_days = db.Column(db.Integer, nullable=True)
+
     country = db.Column(db.String(100), nullable=True)
     region = db.Column(db.String(100), nullable=True)
     area = db.Column(db.String(100), nullable=True)

@@ -158,6 +158,22 @@ def notify_new_inquiry(inquiry: Inquiry, locale: str | None = None) -> None:
     )
 
 
+def send_inquiry_reply(
+    inquiry: Inquiry, agency: Agency, client: Client | None, user: User | None, subject: str, body: str
+) -> None:
+    """The answer someone on the team wrote in the dashboard, from the agency's
+    name. Answers go back to the agency's contact email, else to whoever wrote."""
+    lang = client_locale(client, agency)
+    email_service.send_email(
+        [inquiry.email],
+        subject,
+        _layout(_paragraphs(body) + _muted(i18n.t(lang, "reply.footer", agency=agency.name))),
+        reply_to=agency.contact_email or (user.email if user else None),
+        from_name=agency.name,
+        locale=lang,
+    )
+
+
 def _confirmed_recently(inquiry: Inquiry) -> bool:
     """True if this address already asked this agency something in the last day."""
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
@@ -208,7 +224,12 @@ def notify_booking(booking: Booking, event: str) -> None:
             + (f'<p style="margin:0 0 12px">{escape(i18n.t(lang, "booking.hello", name=first_name))}</p>' if first_name else "")
             + f'<p style="margin:0 0 12px">{escape(i18n.t(lang, f"booking.{event}.lead", property=title))}</p>'
             + dates
-            + _button(booking_url(booking, lang), i18n.t(lang, "booking.view"))
+            # Once the stay is over, the button goes straight to the review form.
+            + (
+                _button(f"{booking_url(booking, lang)}#review", i18n.t(lang, "booking.completed.button"))
+                if event == "completed"
+                else _button(booking_url(booking, lang), i18n.t(lang, "booking.view"))
+            )
             + f'<p style="margin:24px 0 0">{escape(agency.name)}</p>'
         ),
         reply_to=agency.contact_email,

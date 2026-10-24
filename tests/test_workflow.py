@@ -320,3 +320,20 @@ def test_agent_calendar_only_lists_their_rentals(client, register_agency):
     titles = lambda headers: [p["title"] for p in client.get("/api/properties/calendar", headers=headers).get_json()["properties"]]  # noqa: E731
     assert titles(agent["headers"]) == ["De la agente"]
     assert sorted(titles(owner["headers"])) == ["De la agente", "Del dueño"]
+
+
+def test_assigning_a_client_rings_the_new_owner(client, register_agency):
+    owner = register_agency()
+    agent = _invite_agent(client, owner["headers"])
+    lead = _client(client, owner["headers"])
+
+    client.patch(f"/api/clients/{lead['id']}", headers=owner["headers"], json={"assignedAgentId": agent["id"]})
+    bell = client.get("/api/notifications/", headers=agent["headers"]).get_json()
+    assert [item["type"] for item in bell["items"]] == ["CLIENT"]
+    assert bell["items"][0]["params"] == {"name": "Lucía"} and bell["items"][0]["link"] == f"/clients/{lead['id']}"
+
+    # Saving the same owner again, or taking a client yourself, rings nobody.
+    client.patch(f"/api/clients/{lead['id']}", headers=owner["headers"], json={"assignedAgentId": agent["id"]})
+    other = _client(client, owner["headers"], name="Tomás", email="tomas@demo.com")
+    client.patch(f"/api/clients/{other['id']}", headers=agent["headers"], json={"assignedAgentId": agent["id"]})
+    assert client.get("/api/notifications/unread-count", headers=agent["headers"]).get_json()["count"] == 1

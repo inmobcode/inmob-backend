@@ -17,6 +17,9 @@ def create_app(config_class: type = Config) -> Flask:
 
     with app.app_context():
         from app import models  # noqa: F401  (registers models on db.metadata)
+        from app.services import audit
+
+        audit.register()
 
     register_blueprints(app)
     register_locale_hooks(app)
@@ -95,6 +98,8 @@ def register_blueprints(app: Flask) -> None:
     from app.blueprints.payments import bp as payments_bp
     from app.blueprints.properties import bp as properties_bp
     from app.blueprints.public import bp as public_bp
+    from app.blueprints.reports import bp as reports_bp
+    from app.blueprints.reviews import bp as reviews_bp
     from app.blueprints.service_library import bp as service_library_bp
     from app.blueprints.tasks import bp as tasks_bp
     from app.blueprints.team import bp as team_bp
@@ -118,5 +123,7 @@ def register_blueprints(app: Flask) -> None:
         notifications_bp,
         dashboard_bp,
         owner_accounts_bp,
+        reports_bp,
+        reviews_bp,
     ):
         app.register_blueprint(bp)

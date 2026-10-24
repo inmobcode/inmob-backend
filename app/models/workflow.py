@@ -1,7 +1,7 @@
 from app.extensions import db
 from app.models.base import TimestampMixin, uuid_pk
 
-NOTIFICATION_TYPES = ("INQUIRY", "OFFER_VIEWED", "OFFER_REPLY", "PAYMENT", "TASK", "BOOKING")
+NOTIFICATION_TYPES = ("INQUIRY", "OFFER_VIEWED", "OFFER_REPLY", "PAYMENT", "TASK", "BOOKING", "CLIENT", "REVIEW")
 
 
 class Task(db.Model, TimestampMixin):

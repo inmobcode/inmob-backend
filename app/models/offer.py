@@ -1,7 +1,10 @@
 from app.extensions import db
 from app.models.base import TimestampMixin, TrashMixin, generate_token, uuid_pk
 
-OFFER_STATUSES = ("DRAFT", "SENT", "VIEWED", "EXPIRED")
+# ACCEPTED: a booking was made from it.
+OFFER_STATUSES = ("DRAFT", "SENT", "VIEWED", "EXPIRED", "ACCEPTED")
+# Where an open came from, as far as the browser says.
+VIEW_DEVICES = ("MOBILE", "DESKTOP")
 DISCOUNT_TYPES = ("NONE", "PERCENT", "FIXED")
 # Which properties the offer can hold: only for sale, only for rent, or both.
 OFFER_OPERATIONS = ("SALE", "RENT", "BOTH")
@@ -24,6 +27,13 @@ class Offer(db.Model, TimestampMixin, TrashMixin):
     show_price = db.Column(db.Boolean, nullable=False, default=True)
     status = db.Column(db.String(20), nullable=False, default="DRAFT")
     expires_at = db.Column(db.DateTime, nullable=True)
+    # A starting point for new offers: never sent, no public link, kept out of the offers list.
+    is_template = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+
+    # How often the client opened the link (each open is an OfferView; these are kept for the lists).
+    view_count = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    first_viewed_at = db.Column(db.DateTime, nullable=True)
+    last_viewed_at = db.Column(db.DateTime, nullable=True)
 
     # Shown on the public page's welcome block. Kept as three clean fields
     # instead of Kennedys' trick of overloading welcomeTitle with an "@"
@@ -58,6 +68,23 @@ class Offer(db.Model, TimestampMixin, TrashMixin):
         order_by="OfferService.position",
         cascade="all, delete-orphan",
     )
+    views = db.relationship(
+        "OfferView",
+        order_by="OfferView.viewed_at.desc()",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
+
+
+class OfferView(db.Model):
+    """One time the client opened the offer's link."""
+
+    __tablename__ = "offer_views"
+
+    id = uuid_pk()
+    offer_id = db.Column(db.String(36), db.ForeignKey("offers.id"), nullable=False, index=True)
+    viewed_at = db.Column(db.DateTime, nullable=False)
+    device = db.Column(db.String(10), nullable=True)
 
 
 class OfferSection(db.Model, TimestampMixin):

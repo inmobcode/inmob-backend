@@ -58,6 +58,10 @@ def render(kind: str, params: dict, locale: str) -> tuple[str, str | None]:
             else params["title"]
         )
         return i18n.t(locale, "notif.task"), body
+    if kind == "CLIENT":
+        return i18n.t(locale, "notif.client"), params["name"]
+    if kind == "REVIEW":
+        return i18n.t(locale, "notif.review", name=params["name"], rating=params["rating"]), params.get("text")
     raise ValueError(kind)
 
 
@@ -144,6 +148,28 @@ def notify_task_assigned(task, by_user_id: str | None) -> None:
         link="/clients" if not task.client_id else f"/clients/{task.client_id}",
         user_ids={task.assigned_agent_id} if task.assigned_agent_id else set(),
         skip=by_user_id,
+    )
+
+
+def notify_client_assigned(client: Client, by_user_id: str | None) -> None:
+    notify(
+        client.agency_id,
+        "CLIENT",
+        {"name": client.name},
+        link=f"/clients/{client.id}",
+        user_ids={client.assigned_agent_id} if client.assigned_agent_id else set(),
+        skip=by_user_id,
+    )
+
+
+def notify_review(review) -> None:
+    """A guest left a review: whoever can publish it (owners and admins) hears about it."""
+    notify(
+        review.agency_id,
+        "REVIEW",
+        {"name": review.author_name, "rating": review.rating, "text": (review.text or "")[:500] or None},
+        link="/reviews",
+        user_ids=_managers(review.agency_id),
     )
 
 

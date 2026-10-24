@@ -133,10 +133,17 @@ def test_sending_offer_makes_it_publicly_viewable_and_marks_viewed(client, regis
     public_res = client.get(f"/api/public/offers/{offer['token']}")
     assert public_res.status_code == 200
     body = public_res.get_json()
-    assert body["status"] == "VIEWED"
+    # Reading the link isn't an open (link previews read it too); the page reports opens.
+    assert body["status"] == "SENT"
     # agency-internal fields must not leak publicly
     assert "agencyId" not in body
     assert "clientId" not in body
+    assert "viewCount" not in body
+
+    assert client.post(f"/api/public/offers/{offer['token']}/views", json={"device": "MOBILE"}).status_code == 204
+    detail = client.get(f"/api/offers/{offer['id']}", headers=agency["headers"]).get_json()
+    assert detail["status"] == "VIEWED" and detail["viewCount"] == 1
+    assert detail["views"][0]["device"] == "MOBILE"
 
 
 def test_branded_toggle_persists(client, register_agency):
@@ -338,3 +345,103 @@ def test_welcome_content_plain_text_becomes_paragraphs_and_empty_becomes_null(cl
 
     res = client.patch(url, headers=agency["headers"], json={"welcomeContent": "<p></p>"})
     assert res.get_json()["welcomeContent"] is None
+
+
+def _sent_offer(client, headers, prop_id, title="Oferta"):
+    offer = _create_offer(client, headers, title, sections=[{"properties": [{"propertyId": prop_id}]}]).get_json()
+    client.post(f"/api/offers/{offer['id']}/send", headers=headers)
+    return offer
+
+
+def test_opens_are_counted_merged_and_ring_again_when_they_come_back(client, register_agency, app):
+    from datetime import timedelta
+
+    from app.extensions import db
+    from app.models import Offer
+
+    agency = register_agency()
+    headers = agency["headers"]
+    offer = _sent_offer(client, headers, _create_property(client, headers)["id"])
+    views = f"/api/public/offers/{offer['token']}/views"
+    bell = lambda: client.get("/api/notifications/unread-count", headers=headers).get_json()["count"]
+
+    client.post(views, json={"device": "DESKTOP"})
+    client.post(views, json={"device": "DESKTOP"})  # a reload: same visit
+    detail = client.get(f"/api/offers/{offer['id']}", headers=headers).get_json()
+    assert detail["viewCount"] == 1 and detail["firstViewedAt"] == detail["lastViewedAt"]
+    assert bell() == 1
+
+    # Two days later they open it again: counted, and the bell rings again.
+    with app.app_context():
+        row = db.session.get(Offer, offer["id"])
+        row.last_viewed_at -= timedelta(days=2)
+        db.session.commit()
+    client.post(views, json={"device": "something else"})
+    detail = client.get(f"/api/offers/{offer['id']}", headers=headers).get_json()
+    assert detail["viewCount"] == 2 and detail["views"][0]["device"] is None
+    assert bell() == 2
+    listed = client.get("/api/offers/", headers=headers).get_json()[0]
+    assert listed["viewCount"] == 2 and "views" not in listed
+
+    draft = _create_offer(client, headers, "Borrador", sections=[]).get_json()
+    assert client.post(f"/api/public/offers/{draft['token']}/views", json={}).status_code == 404
+
+
+def test_duplicate_and_templates(client, register_agency):
+    agency = register_agency()
+    headers = agency["headers"]
+    prop = _create_property(client, headers)
+    lead = client.post("/api/clients/", headers=headers, json={"name": "Lucía", "email": "lucia@demo.com"}).get_json()
+    offer = client.post(
+        "/api/offers/",
+        headers=headers,
+        json={
+            "title": "Verano",
+            "clientId": lead["id"],
+            "sections": [{"title": "Casas", "properties": [{"propertyId": prop["id"], "priceOverride": 900}]}],
+        },
+    ).get_json()
+
+    copy = client.post(f"/api/offers/{offer['id']}/duplicate", headers=headers, json={}).get_json()
+    assert copy["id"] != offer["id"] and copy["token"] != offer["token"]
+    assert copy["status"] == "DRAFT" and copy["clientId"] is None and copy["isTemplate"] is False
+    assert copy["sections"][0]["title"] == "Casas"
+    assert copy["sections"][0]["properties"][0]["priceOverride"] == 900
+
+    template = client.post(
+        f"/api/offers/{offer['id']}/duplicate", headers=headers, json={"asTemplate": True, "title": "Base verano"}
+    ).get_json()
+    assert template["isTemplate"] is True and template["title"] == "Base verano"
+    assert {item["id"] for item in client.get("/api/offers/", headers=headers).get_json()} == {offer["id"], copy["id"]}
+    assert [item["id"] for item in client.get("/api/offers/?templates=1", headers=headers).get_json()] == [template["id"]]
+
+    # A template has no public life.
+    assert client.post(f"/api/offers/{template['id']}/send", headers=headers).status_code == 400
+    assert client.get(f"/api/public/offers/{template['token']}").status_code == 404
+
+    started = client.post(f"/api/offers/{template['id']}/duplicate", headers=headers, json={"title": "Para Tomás"})
+    assert started.status_code == 201 and started.get_json()["isTemplate"] is False
+    assert client.post(f"/api/offers/{offer['id']}/duplicate", headers=headers, json={"title": "x"}).status_code == 400
+
+
+def test_booking_from_an_offer_accepts_it(client, register_agency):
+    agency = register_agency()
+    headers = agency["headers"]
+    prop = _create_property(client, headers)
+    offer = _sent_offer(client, headers, prop["id"])
+
+    booking = client.post(
+        "/api/bookings/", headers=headers, json={"propertyId": prop["id"], "offerId": offer["id"], "totalPrice": 1200}
+    )
+    assert booking.status_code == 201
+    detail = client.get(f"/api/offers/{offer['id']}", headers=headers).get_json()
+    assert detail["status"] == "ACCEPTED"
+    assert [item["id"] for item in detail["bookings"]] == [booking.get_json()["id"]]
+
+    # Accepted stays accepted: opening it doesn't turn it back into VIEWED.
+    client.post(f"/api/public/offers/{offer['token']}/views", json={})
+    assert client.get(f"/api/offers/{offer['id']}", headers=headers).get_json()["status"] == "ACCEPTED"
+
+    template = client.post(f"/api/offers/{offer['id']}/duplicate", headers=headers, json={"asTemplate": True}).get_json()
+    res = client.post("/api/bookings/", headers=headers, json={"propertyId": prop["id"], "offerId": template["id"]})
+    assert res.status_code == 404

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import selectinload
 
@@ -7,7 +7,7 @@ from app.extensions import db
 from app.models.agency import Agency
 from app.models.booking import Booking
 from app.models.client import Client, Interaction
-from app.models.offer import Offer, OfferProperty, OfferSection, OfferService
+from app.models.offer import Offer, OfferProperty, OfferSection, OfferService, OfferView
 from app.models.service import Service
 from app.models.property import Property
 from app.schemas.property import PropertySchema, PublicPropertySchema
@@ -20,7 +20,14 @@ from app.utils.tenancy import agent_scope
 _property_schema = PropertySchema()
 _public_property_schema = PublicPropertySchema()
 
-TERMINAL_STATUSES = ("EXPIRED",)
+# The link stops changing status on its own: it expired, or a booking was made from it.
+TERMINAL_STATUSES = ("EXPIRED", "ACCEPTED")
+# Opens closer together than this are one visit (a reload, going back from a property).
+VIEW_MERGE = timedelta(minutes=2)
+# An open after this long without one rings the bell again: they came back to it.
+VIEW_COMEBACK = timedelta(hours=24)
+# How many opens the offer's page lists.
+RECENT_VIEWS = 30
 
 
 class OfferError(Exception):
@@ -106,7 +113,7 @@ def _assign_client(agency_id: str, offer: Offer, client_id: str | None) -> None:
         offer.client_email = None
         offer.client_phone = None
         return
-    client = crm_service.visible_clients(Client.query.filter_by(id=client_id, agency_id=agency_id)).first()
+    client = crm_service.live_clients(Client.query.filter_by(id=client_id, agency_id=agency_id)).first()
     if client is None:
         raise OfferError("Client not found", 404)
     offer.client_id = client.id
@@ -194,9 +201,14 @@ def _own_offers(query):
     return query.filter(Offer.created_by == scope) if scope else query
 
 
-def list_offers(agency_id: str):
+def list_offers(agency_id: str, *, templates: bool = False):
+    """The offers, or with templates=True the templates (kept apart from them)."""
     return (
-        _own_offers(Offer.query.options(*_offer_load_options()).filter_by(agency_id=agency_id, deleted_at=None))
+        _own_offers(
+            Offer.query.options(*_offer_load_options()).filter_by(
+                agency_id=agency_id, deleted_at=None, is_template=templates
+            )
+        )
         .order_by(Offer.created_at.desc())
         .all()
     )
@@ -320,7 +332,9 @@ def send_offer(agency_id: str, offer_id: str) -> Offer:
     """Publishes a draft's link and emails it to the offer's client. An offer
     already out can be sent again, which only re-emails the client."""
     offer = get_offer(agency_id, offer_id)
-    if offer.status in TERMINAL_STATUSES:
+    if offer.is_template:
+        raise OfferError("A template can't be sent", 400)
+    if offer.status == "EXPIRED":
         raise OfferError("Esta oferta venció", 400)
     client = db.session.get(Client, offer.client_id) if offer.client_id else None
     if offer.status != "DRAFT" and client is None:
@@ -346,21 +360,112 @@ def send_offer(agency_id: str, offer_id: str) -> Offer:
     return offer
 
 
-def get_offer_by_token(token: str) -> Offer:
-    offer = Offer.query.options(*_offer_load_options()).filter_by(token=token, deleted_at=None).first()
+def _published(token: str, *, load_all: bool = True) -> Offer:
+    """The offer behind a public link: sent, not a template, not in the trash."""
+    query = Offer.query.options(*_offer_load_options()) if load_all else Offer.query
+    offer = query.filter_by(token=token, deleted_at=None, is_template=False).first()
     if offer is None or offer.status == "DRAFT":
         raise OfferError("Offer not found", 404)
+    return offer
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+def get_offer_by_token(token: str) -> Offer:
+    """Reading the link doesn't count as an open (link previews in WhatsApp
+    or mail read it too); the page reports real opens to record_view."""
+    offer = _published(token)
+    now = trash.now()
     if offer.expires_at and offer.expires_at < now and offer.status not in TERMINAL_STATUSES:
         offer.status = "EXPIRED"
         db.session.commit()
-    elif offer.status == "SENT":
+    return offer
+
+
+def record_view(token: str, device: str | None) -> None:
+    """Counts one open of the link, sent by the page once it has loaded in a
+    browser. The first open marks the offer VIEWED and rings the bell; so does
+    coming back to it after a day."""
+    offer = _published(token, load_all=False)
+    now = trash.now()
+    if offer.last_viewed_at and now - offer.last_viewed_at < VIEW_MERGE:
+        return
+    first = offer.view_count == 0
+    came_back = offer.last_viewed_at is not None and now - offer.last_viewed_at >= VIEW_COMEBACK
+
+    db.session.add(OfferView(offer_id=offer.id, viewed_at=now, device=device))
+    offer.view_count += 1
+    offer.first_viewed_at = offer.first_viewed_at or now
+    offer.last_viewed_at = now
+    if offer.status == "SENT":
         offer.status = "VIEWED"
-        db.session.commit()
+    db.session.commit()
+    if first or came_back:
         feed.notify_offer_viewed(offer)
 
-    return offer
+
+def duplicate_offer(agency_id: str, created_by: str, offer_id: str, *, as_template: bool, title: str | None = None) -> Offer:
+    """A new draft with the same content. The client and the expiry don't
+    carry over: a copy is usually for someone else. With as_template=True the
+    copy is a template; duplicating a template is how an offer starts from one."""
+    source = get_offer(agency_id, offer_id)
+    copy = Offer(
+        agency_id=agency_id,
+        created_by=created_by,
+        title=(title or source.title)[:200],
+        reference_code=None,
+        operation=source.operation,
+        currency=source.currency,
+        show_price=source.show_price,
+        branded=source.branded,
+        welcome_title=source.welcome_title,
+        welcome_date_label=source.welcome_date_label,
+        welcome_content=source.welcome_content,
+        status="DRAFT",
+        is_template=as_template,
+    )
+    db.session.add(copy)
+    sections = {}
+    for section in source.sections:
+        sections[section.id] = OfferSection(title=section.title, text=section.text, position=section.position)
+        copy.sections.append(sections[section.id])
+    for item in source.offer_properties:
+        # Properties the agency trashed since don't come along.
+        if item.property is None or item.property.deleted_at is not None:
+            continue
+        copy.offer_properties.append(
+            OfferProperty(
+                section=sections.get(item.section_id),
+                property_id=item.property_id,
+                position=item.position,
+                price_override=item.price_override,
+                discount_type=item.discount_type,
+                discount_value=item.discount_value,
+                security_deposit=item.security_deposit,
+                bottom_text=item.bottom_text,
+            )
+        )
+    for item in source.offer_services:
+        copy.offer_services.append(
+            OfferService(
+                service_id=item.service_id,
+                position=item.position,
+                name=item.name,
+                type=item.type,
+                description=item.description,
+                image_url=item.image_url,
+                unit=item.unit,
+                unit_price=item.unit_price,
+                quantity=item.quantity,
+                date=item.date,
+                note=item.note,
+            )
+        )
+    db.session.commit()
+    return copy
+
+
+def _iso(value: datetime | None) -> str | None:
+    """Stored as naive UTC; say so, or browsers read it as local time."""
+    return value.replace(tzinfo=timezone.utc).isoformat() if value else None
 
 
 def create_public_offer_inquiry(token: str, data: dict) -> Offer:
@@ -396,7 +501,8 @@ def create_public_offer_inquiry(token: str, data: dict) -> Offer:
     return offer
 
 
-def serialize_offer(offer: Offer, *, public: bool = False) -> dict:
+def serialize_offer(offer: Offer, *, public: bool = False, detail: bool = False) -> dict:
+    """`detail` adds what only the offer's own page shows: its latest opens and the bookings made from it."""
     property_schema = _public_property_schema if public else _property_schema
 
     properties_by_section: dict[str | None, list[OfferProperty]] = {}
@@ -495,5 +601,26 @@ def serialize_offer(offer: Offer, *, public: bool = False) -> dict:
         data["clientId"] = offer.client_id
         data["referenceCode"] = offer.reference_code
         data["deletedAt"] = offer.deleted_at.isoformat() if offer.deleted_at else None
+        data["isTemplate"] = offer.is_template
+        data["viewCount"] = offer.view_count
+        data["firstViewedAt"] = _iso(offer.first_viewed_at)
+        data["lastViewedAt"] = _iso(offer.last_viewed_at)
+
+    if detail:
+        data["views"] = [
+            {"at": _iso(view.viewed_at), "device": view.device} for view in offer.views.limit(RECENT_VIEWS).all()
+        ]
+        data["bookings"] = [
+            {
+                "id": booking.id,
+                "status": booking.status,
+                "propertyTitle": booking.property.title if booking.property else None,
+                "startDate": booking.start_date.isoformat() if booking.start_date else None,
+                "endDate": booking.end_date.isoformat() if booking.end_date else None,
+            }
+            for booking in Booking.query.filter_by(offer_id=offer.id, deleted_at=None)
+            .order_by(Booking.created_at.desc())
+            .all()
+        ]
 
     return data

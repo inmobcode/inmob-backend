@@ -4,12 +4,22 @@ from marshmallow import ValidationError
 from app.blueprints.public import bp
 from app.i18n import request_locale
 from app.models import Agency, Property
+from app.models.offer import VIEW_DEVICES
 from app.schemas.agency import AgencyPublicSchema
 from app.schemas.client import PublicInquirySchema
 from app.schemas.offer import PublicOfferInquirySchema
 from app.schemas.property import PublicPropertySchema
+from app.schemas.review import GuestReviewSchema
 from app.schemas.public import ContactRequestSchema, DemoRequestSchema
-from app.services import availability_service, booking_service, crm_service, offer_service, property_service
+from app.services import (
+    availability_service,
+    booking_service,
+    crm_service,
+    offer_service,
+    pricing,
+    property_service,
+    review_service,
+)
 from app.services.notifications import notify_contact_request, notify_demo_request
 
 property_schema = PublicPropertySchema()
@@ -26,7 +36,8 @@ def get_public_agency(agency_slug):
     agency = _get_agency_or_404(agency_slug)
     if agency is None:
         return jsonify({"message": "Agency not found"}), 404
-    return jsonify(agency_public_schema.dump(agency))
+    # The latest published reviews, for the site's reviews block.
+    return jsonify({**agency_public_schema.dump(agency), **review_service.for_agency(agency.id)})
 
 
 @bp.route("/<agency_slug>/properties", methods=["GET"])
@@ -69,7 +80,8 @@ def list_public_properties(agency_slug):
         query = query.filter(Property.title.ilike(f"%{search}%"))
 
     properties = query.order_by(Property.created_at.desc()).all()
-    return jsonify(properties_schema.dump(properties))
+    ratings = review_service.ratings_by_property(agency.id, [prop.id for prop in properties])
+    return jsonify([{**item, "rating": ratings.get(item["id"])} for item in properties_schema.dump(properties)])
 
 
 @bp.route("/<agency_slug>/properties/<property_slug>", methods=["GET"])
@@ -86,7 +98,7 @@ def get_public_property(agency_slug, property_slug):
     if prop is None:
         return jsonify({"message": "Property not found"}), 404
 
-    return jsonify(property_schema.dump(prop))
+    return jsonify({**property_schema.dump(prop), **review_service.for_property(agency.id, prop.id)})
 
 
 @bp.route("/<agency_slug>/properties/<property_slug>/availability.ics", methods=["GET"])
@@ -145,6 +157,24 @@ def create_inquiry(agency_slug):
     return jsonify({"id": inquiry.id}), 201
 
 
+@bp.route("/<agency_slug>/properties/<property_slug>/quote", methods=["GET"])
+def quote_public_property(agency_slug, property_slug):
+    """What a stay costs (`?start=&end=`, yyyy-MM-dd), for the calculator on a published rental's page."""
+    agency = _get_agency_or_404(agency_slug)
+    if agency is None:
+        return jsonify({"message": "Agency not found"}), 404
+    prop = Property.query.filter_by(
+        agency_id=agency.id, slug=property_slug, status="PUBLISHED", deleted_at=None, listing_type="RENT"
+    ).first()
+    if prop is None:
+        return jsonify({"message": "Property not found"}), 404
+    try:
+        start, end = pricing.parse_range(request.args.get("start"), request.args.get("end"))
+        return jsonify(pricing.quote(prop, start, end))
+    except pricing.PricingError as err:
+        return jsonify({"message": err.message}), err.status_code
+
+
 @bp.route("/offers/<token>", methods=["GET"])
 def get_public_offer(token):
     try:
@@ -152,6 +182,17 @@ def get_public_offer(token):
     except offer_service.OfferError as err:
         return jsonify({"message": err.message}), err.status_code
     return jsonify(offer_service.serialize_offer(offer, public=True))
+
+
+@bp.route("/offers/<token>/views", methods=["POST"])
+def record_offer_view(token):
+    """The offer page, once open in a browser, says so. `device` is MOBILE or DESKTOP."""
+    device = (request.get_json(silent=True) or {}).get("device")
+    try:
+        offer_service.record_view(token, device if device in VIEW_DEVICES else None)
+    except offer_service.OfferError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return "", 204
 
 
 @bp.route("/offers/<token>/inquiries", methods=["POST"])
@@ -183,6 +224,24 @@ def get_public_booking(token):
     except booking_service.BookingError as err:
         return jsonify({"message": err.message}), err.status_code
     return jsonify(booking_service.serialize_public_booking(booking))
+
+
+@bp.route("/bookings/<token>/review", methods=["POST"])
+def review_booking(token):
+    """The guest's review, from their booking page once the stay is over."""
+    try:
+        booking = booking_service.get_booking_by_token(token)
+    except booking_service.BookingError as err:
+        return jsonify({"message": err.message}), err.status_code
+    try:
+        data = GuestReviewSchema().load(request.get_json(silent=True) or {})
+    except ValidationError as err:
+        return jsonify({"message": "Validation error", "errors": err.messages}), 400
+    try:
+        review_service.submit_guest_review(booking, data)
+    except review_service.ReviewError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(booking_service.serialize_public_booking(booking)), 201
 
 
 @bp.route("/sitemap", methods=["GET"])

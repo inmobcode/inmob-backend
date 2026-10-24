@@ -30,6 +30,9 @@ def list_tasks(
     assigned_to: str | None = None,
 ) -> list[Task]:
     query = visible_tasks(Task.query.filter_by(agency_id=agency_id))
+    # A trashed client's tasks wait with them, and come back if they're restored.
+    trashed = db.session.query(Client.id).filter(Client.agency_id == agency_id, Client.deleted_at.isnot(None))
+    query = query.filter(db.or_(Task.client_id.is_(None), Task.client_id.notin_(trashed)))
     if status == "open":
         query = query.filter(Task.done_at.is_(None))
     elif status == "done":

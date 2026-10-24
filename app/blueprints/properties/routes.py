@@ -16,7 +16,7 @@ from app.schemas.property import (
 )
 from app.schemas.rate_period import RatePeriodSchema, RatePeriodUpdateSchema
 from app.schemas.recommendation import RecommendationSchema, RecommendationUpdateSchema
-from app.services import availability_service, property_service, storage_service
+from app.services import audit, availability_service, pricing, property_service, storage_service
 from app.utils.tenancy import current_agency_id
 
 property_schema = PropertySchema()
@@ -396,3 +396,26 @@ def delete_recommendation(property_id, recommendation_id):
     except property_service.PropertyError as err:
         return jsonify({"message": err.message}), err.status_code
     return "", 204
+
+
+@bp.route("/<property_id>/history", methods=["GET"])
+def property_history(property_id):
+    try:
+        prop = property_service.get_property(current_agency_id(), property_id)
+    except property_service.PropertyError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(audit.serialize(audit.history("PROPERTY", prop.id)))
+
+
+@bp.route("/<property_id>/quote", methods=["GET"])
+def quote_property(property_id):
+    """What a stay costs with the property's rates and rules (`?start=&end=`, yyyy-MM-dd)."""
+    try:
+        prop = property_service.get_property(current_agency_id(), property_id)
+    except property_service.PropertyError as err:
+        return jsonify({"message": err.message}), err.status_code
+    try:
+        start, end = pricing.parse_range(request.args.get("start"), request.args.get("end"))
+        return jsonify(pricing.quote(prop, start, end))
+    except pricing.PricingError as err:
+        return jsonify({"message": err.message}), err.status_code

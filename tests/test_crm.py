@@ -136,3 +136,92 @@ def test_agency_cannot_access_another_agencys_client(client, register_agency):
 
     res = client.get(f"/api/clients/{client_id}", headers=agency_b["headers"])
     assert res.status_code == 404
+
+
+def test_deleted_client_goes_to_trash_and_comes_back(client, register_agency):
+    headers = register_agency()["headers"]
+    created = client.post("/api/clients/", headers=headers, json={"name": "Lucía", "email": "lucia@demo.com"}).get_json()
+    client.post("/api/tasks/", headers=headers, json={"title": "Llamar", "clientId": created["id"]})
+
+    assert client.delete(f"/api/clients/{created['id']}", headers=headers).status_code == 204
+    assert client.get("/api/clients/", headers=headers).get_json() == []
+    assert client.get(f"/api/clients/{created['id']}", headers=headers).status_code == 404
+    assert client.get("/api/tasks/", headers=headers).get_json() == []
+    trashed = client.get("/api/clients/trash", headers=headers).get_json()
+    assert [item["id"] for item in trashed] == [created["id"]] and trashed[0]["deletedAt"]
+
+    # The same email can't be added again while it waits in the trash.
+    again = client.post("/api/clients/", headers=headers, json={"name": "Lucía", "email": "lucia@demo.com"})
+    assert again.status_code == 409
+
+    res = client.post(f"/api/clients/{created['id']}/restore", headers=headers)
+    assert res.status_code == 200 and res.get_json()["deletedAt"] is None
+    assert len(client.get("/api/clients/", headers=headers).get_json()) == 1
+    assert len(client.get("/api/tasks/", headers=headers).get_json()) == 1
+
+
+def test_new_inquiry_brings_a_trashed_client_back(client, register_agency):
+    agency = register_agency(agency_name="Agencia Vuelve", email="owner@vuelve.com")
+    payload = {"name": "Lucía", "email": "lucia@demo.com", "message": "Hola"}
+    client.post("/api/public/agencia-vuelve/inquiries", json=payload)
+    lead = client.get("/api/clients/", headers=agency["headers"]).get_json()[0]
+    client.delete(f"/api/clients/{lead['id']}", headers=agency["headers"])
+
+    client.post("/api/public/agencia-vuelve/inquiries", json={**payload, "message": "De nuevo"})
+    clients = client.get("/api/clients/", headers=agency["headers"]).get_json()
+    assert [item["id"] for item in clients] == [lead["id"]]
+
+
+def test_client_with_bookings_cant_be_deleted_for_good(client, register_agency):
+    headers = register_agency()["headers"]
+    prop = client.post(
+        "/api/properties/", headers=headers, json={"title": "Casa", "listingType": "RENT", "category": "HOUSE"}
+    ).get_json()
+    booked = client.post("/api/clients/", headers=headers, json={"name": "Lucía", "email": "lucia@demo.com"}).get_json()
+    client.post("/api/bookings/", headers=headers, json={"propertyId": prop["id"], "clientId": booked["id"]})
+    other = client.post("/api/clients/", headers=headers, json={"name": "Tomás", "email": "tomas@demo.com"}).get_json()
+    offer = client.post(
+        "/api/offers/", headers=headers, json={"title": "Oferta", "sections": [], "clientId": other["id"]}
+    ).get_json()
+    for item in (booked, other):
+        client.delete(f"/api/clients/{item['id']}", headers=headers)
+
+    assert client.delete(f"/api/clients/{booked['id']}/permanent", headers=headers).status_code == 409
+    assert client.delete(f"/api/clients/{other['id']}/permanent", headers=headers).status_code == 204
+    assert [item["id"] for item in client.get("/api/clients/trash", headers=headers).get_json()] == [booked["id"]]
+    # The offer keeps its copy of the contact details.
+    kept = client.get(f"/api/offers/{offer['id']}", headers=headers).get_json()
+    assert kept["clientId"] is None and kept["clientName"] == "Tomás"
+
+
+def test_client_tags_and_preferences(client, register_agency):
+    headers = register_agency()["headers"]
+    created = client.post("/api/clients/", headers=headers, json={"name": "Lucía", "email": "lucia@demo.com"}).get_json()
+    assert created["tags"] == []
+
+    res = client.patch(
+        f"/api/clients/{created['id']}",
+        headers=headers,
+        json={
+            "tags": [" VIP ", "vip", "Inversor"],
+            "budgetMin": 1000,
+            "budgetMax": 2500,
+            "guests": 4,
+            "zones": "Centro, Costa",
+            "desiredFrom": "2027-01-10",
+            "desiredTo": "2027-01-20",
+        },
+    )
+    body = res.get_json()
+    assert res.status_code == 200
+    assert body["tags"] == ["VIP", "Inversor"]
+    assert (body["budgetMin"], body["budgetMax"], body["guests"]) == (1000, 2500, 4)
+    assert (body["desiredFrom"], body["desiredTo"]) == ("2027-01-10", "2027-01-20")
+
+    # Checked against what's saved, so changing one end alone can't cross the other.
+    assert client.patch(f"/api/clients/{created['id']}", headers=headers, json={"budgetMin": 3000}).status_code == 400
+    assert (
+        client.patch(f"/api/clients/{created['id']}", headers=headers, json={"desiredTo": "2027-01-01"}).status_code
+        == 400
+    )
+

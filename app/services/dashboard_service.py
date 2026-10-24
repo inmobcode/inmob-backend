@@ -6,7 +6,7 @@ from sqlalchemy import func
 from app.extensions import db
 from app.models import Booking, Client, Inquiry, Offer, Payment
 from app.models.client import CLIENT_STAGES
-from app.services import crm_service, task_service
+from app.services import crm_service, inquiry_service, task_service
 from app.utils.tenancy import agent_scope
 
 WINDOW_DAYS = 14
@@ -23,7 +23,7 @@ def _bookings(agency_id: str):
 
 
 def _offers(agency_id: str):
-    query = Offer.query.filter_by(agency_id=agency_id, deleted_at=None)
+    query = Offer.query.filter_by(agency_id=agency_id, deleted_at=None, is_template=False)
     scope = agent_scope()
     return query.filter(Offer.created_by == scope) if scope else query
 
@@ -33,7 +33,7 @@ def summary(agency_id: str, user_id: str) -> dict:
     horizon = today + timedelta(days=WINDOW_DAYS)
 
     # Inquiries
-    inquiries = crm_service.visible_inquiries(Inquiry.query.filter_by(agency_id=agency_id))
+    inquiries = inquiry_service.inbox(agency_id)
     unread = inquiries.filter(Inquiry.read_at.is_(None)).count()
     recent = inquiries.order_by(Inquiry.created_at.desc()).limit(5).all()
 
@@ -72,7 +72,7 @@ def summary(agency_id: str, user_id: str) -> dict:
 
     # Funnel
     stage_counts = dict(
-        crm_service.visible_clients(Client.query.filter_by(agency_id=agency_id))
+        crm_service.live_clients(Client.query.filter_by(agency_id=agency_id))
         .with_entities(Client.stage, func.count(Client.id))
         .group_by(Client.stage)
         .all()

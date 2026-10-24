@@ -266,3 +266,64 @@ def test_booking_dates_cant_be_in_the_past_or_backwards(client, register_agency)
         f"/api/bookings/{today.get_json()['id']}", headers=headers, json={"startDate": _days_ahead(-10)}
     )
     assert moved_back.status_code == 400
+
+
+def _booking(client, headers, **extra):
+    prop = client.post(
+        "/api/properties/", headers=headers, json={"title": "Casa", "listingType": "RENT", "category": "HOUSE"}
+    ).get_json()
+    return client.post(
+        "/api/bookings/", headers=headers, json={"propertyId": prop["id"], "totalPrice": 1000, "currency": "EUR", **extra}
+    ).get_json()
+
+
+def test_guests_and_internal_notes(client, register_agency):
+    headers = register_agency()["headers"]
+    booking = _booking(client, headers, guests=4, notes="Llegan tarde")
+    assert booking["guests"] == 4 and booking["notes"] == "Llegan tarde"
+
+    public = client.get(f"/api/public/bookings/{booking['token']}").get_json()
+    assert public["guests"] == 4 and "notes" not in public
+    assert public["reference"] == booking["id"][:8].upper()
+
+    # A closed booking still takes notes, but not new terms.
+    client.post(f"/api/bookings/{booking['id']}/cancel", headers=headers)
+    assert client.patch(f"/api/bookings/{booking['id']}", headers=headers, json={"notes": "Avisó"}).status_code == 200
+    assert client.patch(f"/api/bookings/{booking['id']}", headers=headers, json={"guests": 2}).status_code == 400
+    assert client.patch(f"/api/bookings/{booking['id']}", headers=headers, json={"guests": 0}).status_code == 400
+
+
+def test_payments_can_be_registered_paid_edited_and_deleted(client, register_agency):
+    headers = register_agency()["headers"]
+    booking = _booking(client, headers)
+    base = f"/api/bookings/{booking['id']}/payments"
+
+    paid = client.post(
+        base,
+        headers=headers,
+        json={"amount": 300, "currency": "EUR", "type": "DEPOSIT", "status": "PAID", "paidAt": "2026-10-20T12:00:00", "method": "Transferencia"},
+    ).get_json()
+    assert paid["status"] == "PAID" and paid["paidAt"].startswith("2026-10-20") and paid["method"] == "Transferencia"
+    # Registering one already collected rings the bell, like marking it paid does.
+    assert client.get("/api/notifications/unread-count", headers=headers).get_json()["count"] == 1
+
+    pending = client.post(base, headers=headers, json={"amount": 700, "currency": "EUR", "type": "BALANCE"}).get_json()
+    assert pending["status"] == "PENDING" and pending["paidAt"] is None
+    assert client.post(base, headers=headers, json={"amount": 0, "type": "BALANCE"}).status_code == 400
+
+    res = client.patch(f"{base}/{pending['id']}", headers=headers, json={"amount": 650, "note": "Saldo", "status": "PAID"})
+    body = res.get_json()
+    assert res.status_code == 200 and body["amount"] == 650 and body["status"] == "PAID" and body["paidAt"]
+    assert body["note"] == "Saldo"
+
+    # Back to pending forgets the date.
+    body = client.patch(f"{base}/{pending['id']}", headers=headers, json={"status": "PENDING"}).get_json()
+    assert body["status"] == "PENDING" and body["paidAt"] is None
+
+    assert client.delete(f"{base}/{paid['id']}", headers=headers).status_code == 204
+    detail = client.get(f"/api/bookings/{booking['id']}", headers=headers).get_json()
+    assert [p["id"] for p in detail["payments"]] == [pending["id"]]
+    assert client.delete(f"{base}/{paid['id']}", headers=headers).status_code == 404
+
+    public = client.get(f"/api/public/bookings/{booking['token']}").get_json()
+    assert "note" not in public["payments"][0]

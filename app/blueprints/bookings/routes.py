@@ -3,8 +3,8 @@ from flask_jwt_extended import get_jwt_identity
 from marshmallow import ValidationError
 
 from app.blueprints.bookings import bp
-from app.schemas.booking import BookingSchema, BookingUpdateSchema, PaymentSchema
-from app.services import booking_service
+from app.schemas.booking import BookingSchema, BookingUpdateSchema, PaymentSchema, PaymentUpdateSchema
+from app.services import audit, booking_service
 from app.utils.tenancy import current_agency_id
 
 booking_schema = BookingSchema()
@@ -135,6 +135,27 @@ def add_payment(booking_id):
     return jsonify(payment_schema.dump(payment)), 201
 
 
+@bp.route("/<booking_id>/payments/<payment_id>", methods=["PATCH"])
+def update_payment(booking_id, payment_id):
+    data, error = _load(PaymentUpdateSchema(), partial=True)
+    if error:
+        return error
+    try:
+        payment = booking_service.update_payment(current_agency_id(), booking_id, payment_id, data)
+    except booking_service.BookingError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(payment_schema.dump(payment))
+
+
+@bp.route("/<booking_id>/payments/<payment_id>", methods=["DELETE"])
+def delete_payment(booking_id, payment_id):
+    try:
+        booking_service.delete_payment(current_agency_id(), booking_id, payment_id)
+    except booking_service.BookingError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return "", 204
+
+
 @bp.route("/<booking_id>/payments/<payment_id>/mark-paid", methods=["POST"])
 def mark_payment_paid(booking_id, payment_id):
     try:
@@ -142,3 +163,12 @@ def mark_payment_paid(booking_id, payment_id):
     except booking_service.BookingError as err:
         return jsonify({"message": err.message}), err.status_code
     return jsonify(payment_schema.dump(payment))
+
+
+@bp.route("/<booking_id>/history", methods=["GET"])
+def booking_history(booking_id):
+    try:
+        booking = booking_service.get_booking(current_agency_id(), booking_id)
+    except booking_service.BookingError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(audit.serialize(audit.history("BOOKING", booking.id)))

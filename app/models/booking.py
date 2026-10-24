@@ -39,6 +39,9 @@ class Booking(db.Model, TimestampMixin, TrashMixin):
     total_price = db.Column(db.Float, nullable=True)
     currency = db.Column(db.String(3), nullable=False, default="USD")
     commission_amount = db.Column(db.Float, nullable=True)
+    guests = db.Column(db.Integer, nullable=True)
+    # For the team only: never on the client's page or receipt.
+    notes = db.Column(db.Text, nullable=True)
 
     property = db.relationship("Property")
     client = db.relationship("Client")
@@ -61,5 +64,7 @@ class Payment(db.Model, TimestampMixin):
     status = db.Column(db.String(10), nullable=False, default="PENDING")
     paid_at = db.Column(db.DateTime, nullable=True)
     method = db.Column(db.String(50), nullable=True)
+    # A short reference for the team ("transfer 0042", "card ending 1234").
+    note = db.Column(db.String(200), nullable=True)
 
     booking = db.relationship("Booking", back_populates="payments")

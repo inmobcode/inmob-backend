@@ -85,7 +85,10 @@ def serialize_public_booking(booking: Booking) -> dict:
     agency = db.session.get(Agency, booking.agency_id)
     prop = booking.property
     return {
+        # Printed on the receipt; the id itself stays private.
+        "reference": booking.id[:8].upper(),
         "status": booking.status,
+        "guests": booking.guests,
         "startDate": booking.start_date.isoformat() if booking.start_date else None,
         "endDate": booking.end_date.isoformat() if booking.end_date else None,
         "totalPrice": booking.total_price,
@@ -99,6 +102,7 @@ def serialize_public_booking(booking: Booking) -> dict:
                 "type": payment.type,
                 "status": payment.status,
                 "paidAt": payment.paid_at.isoformat() + "+00:00" if payment.paid_at else None,
+                "method": payment.method,
             }
             for payment in booking.payments
             if payment.type != "COMMISSION"
@@ -109,7 +113,17 @@ def serialize_public_booking(booking: Booking) -> dict:
             "published": prop.status == "PUBLISHED",
         },
         "agency": {**AgencyPublicSchema().dump(agency), "slug": agency.slug},
+        # Once the stay is over the guest can leave one review; then they see what they wrote.
+        "review": _public_review(booking),
+        "canReview": booking.status == "COMPLETED" and _public_review(booking) is None,
     }
+
+
+def _public_review(booking: Booking) -> dict | None:
+    from app.services import review_service
+
+    review = review_service.booking_review(booking)
+    return {"rating": review.rating, "text": review.text, "status": review.status} if review else None
 
 
 def _check_dates(start: date | None, end: date | None) -> None:
@@ -131,8 +145,9 @@ def create_booking(agency_id: str, created_by: str, data: dict) -> Booking:
     _validate_scoped(agency_id, Property, data["property_id"], "Property")
     if data.get("client_id"):
         _validate_scoped(agency_id, Client, data["client_id"], "Client")
-    if data.get("offer_id"):
-        _validate_scoped(agency_id, Offer, data["offer_id"], "Offer")
+    offer = _validate_scoped(agency_id, Offer, data["offer_id"], "Offer") if data.get("offer_id") else None
+    if offer is not None and offer.is_template:
+        raise BookingError("Offer not found", 404)
 
     booking = Booking(
         agency_id=agency_id,
@@ -145,9 +160,14 @@ def create_booking(agency_id: str, created_by: str, data: dict) -> Booking:
         total_price=data.get("total_price"),
         currency=data.get("currency", "USD"),
         commission_amount=data.get("commission_amount"),
+        guests=data.get("guests"),
+        notes=data.get("notes"),
         status="PENDING",
     )
     db.session.add(booking)
+    # Booking from an offer means the client took it.
+    if offer is not None:
+        offer.status = "ACCEPTED"
     db.session.commit()
     notify_booking(booking, "created")
     return booking
@@ -155,7 +175,8 @@ def create_booking(agency_id: str, created_by: str, data: dict) -> Booking:
 
 def update_booking(agency_id: str, booking_id: str, data: dict) -> Booking:
     booking = get_booking(agency_id, booking_id)
-    if booking.status in TERMINAL_STATUSES:
+    # A closed booking keeps its terms, but the team can still write notes on it.
+    if booking.status in TERMINAL_STATUSES and set(data) - {"notes"}:
         raise BookingError("Cannot edit a cancelled or completed booking", 400)
     if data.get("client_id"):
         _validate_scoped(agency_id, Client, data["client_id"], "Client")
@@ -277,31 +298,76 @@ def complete_booking(agency_id: str, booking_id: str) -> Booking:
         raise BookingError("Only confirmed bookings can be completed", 400)
     booking.status = "COMPLETED"
     db.session.commit()
+    # Thanks the guest and asks for their review.
+    notify_booking(booking, "completed")
     return booking
 
 
+def _naive_utc(value: datetime | None) -> datetime | None:
+    if value is None or value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _set_status(payment: Payment, status: str, paid_at: datetime | None) -> bool:
+    """PAID keeps the given collection date (or now); PENDING clears it.
+    Says whether the payment just became paid."""
+    became_paid = status == "PAID" and payment.status != "PAID"
+    payment.status = status
+    if status == "PAID":
+        payment.paid_at = _naive_utc(paid_at) or payment.paid_at or datetime.now(timezone.utc).replace(tzinfo=None)
+    else:
+        payment.paid_at = None
+    return became_paid
+
+
 def add_payment(agency_id: str, booking_id: str, data: dict) -> Payment:
-    get_booking(agency_id, booking_id)
+    booking = get_booking(agency_id, booking_id)
     payment = Payment(
         booking_id=booking_id,
         amount=data["amount"],
         currency=data.get("currency", "USD"),
         type=data.get("type", "DEPOSIT"),
         method=data.get("method"),
+        note=data.get("note"),
         status="PENDING",
     )
+    paid = _set_status(payment, data.get("status", "PENDING"), data.get("paid_at"))
     db.session.add(payment)
     db.session.commit()
+    if paid:
+        feed.notify_payment(booking, payment)
     return payment
 
 
-def mark_payment_paid(agency_id: str, booking_id: str, payment_id: str) -> Payment:
-    booking = get_booking(agency_id, booking_id)
+def _get_payment(booking: Booking, payment_id: str) -> Payment:
     payment = next((p for p in booking.payments if p.id == payment_id), None)
     if payment is None:
         raise BookingError("Payment not found", 404)
-    payment.status = "PAID"
-    payment.paid_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    db.session.commit()
-    feed.notify_payment(booking, payment)
     return payment
+
+
+def update_payment(agency_id: str, booking_id: str, payment_id: str, data: dict) -> Payment:
+    """Fixes a payment: amount, type, method, note, or whether (and when) it was collected."""
+    booking = get_booking(agency_id, booking_id)
+    payment = _get_payment(booking, payment_id)
+    for field in ("amount", "type", "method", "note"):
+        if field in data:
+            setattr(payment, field, data[field])
+    paid = False
+    if "status" in data or "paid_at" in data:
+        paid = _set_status(payment, data.get("status", payment.status), data.get("paid_at"))
+    db.session.commit()
+    if paid:
+        feed.notify_payment(booking, payment)
+    return payment
+
+
+def delete_payment(agency_id: str, booking_id: str, payment_id: str) -> None:
+    booking = get_booking(agency_id, booking_id)
+    db.session.delete(_get_payment(booking, payment_id))
+    db.session.commit()
+
+
+def mark_payment_paid(agency_id: str, booking_id: str, payment_id: str) -> Payment:
+    return update_payment(agency_id, booking_id, payment_id, {"status": "PAID"})

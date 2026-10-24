@@ -31,8 +31,17 @@ def create_client():
     data, error = _load(ClientSchema())
     if error:
         return error
-    client = crm_service.create_client(current_agency_id(), get_jwt_identity(), data)
+    try:
+        client = crm_service.create_client(current_agency_id(), get_jwt_identity(), data)
+    except crm_service.ClientError as err:
+        return jsonify({"message": err.message}), err.status_code
     return jsonify(client_schema.dump(client)), 201
+
+
+@bp.route("/trash", methods=["GET"])
+def list_trashed_clients():
+    """What's in the trash; anything older than TRASH_DAYS is deleted for good first."""
+    return jsonify(clients_schema.dump(crm_service.list_trashed_clients(current_agency_id())))
 
 
 @bp.route("/<client_id>", methods=["GET"])
@@ -54,10 +63,37 @@ def update_client(client_id):
         return error
 
     try:
-        client = crm_service.update_client(current_agency_id(), client_id, data)
+        client = crm_service.update_client(current_agency_id(), client_id, data, get_jwt_identity())
     except crm_service.ClientError as err:
         return jsonify({"message": err.message}), err.status_code
     return jsonify(client_schema.dump(client))
+
+
+@bp.route("/<client_id>", methods=["DELETE"])
+def delete_client(client_id):
+    try:
+        crm_service.delete_client(current_agency_id(), client_id)
+    except crm_service.ClientError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return "", 204
+
+
+@bp.route("/<client_id>/restore", methods=["POST"])
+def restore_client(client_id):
+    try:
+        client = crm_service.restore_client(current_agency_id(), client_id)
+    except crm_service.ClientError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return jsonify(client_schema.dump(client))
+
+
+@bp.route("/<client_id>/permanent", methods=["DELETE"])
+def delete_client_forever(client_id):
+    try:
+        crm_service.delete_client_forever(current_agency_id(), client_id)
+    except crm_service.ClientError as err:
+        return jsonify({"message": err.message}), err.status_code
+    return "", 204
 
 
 @bp.route("/<client_id>/interactions", methods=["POST"])

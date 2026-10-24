@@ -8,7 +8,7 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 HEX_COLOR_RE = r"^#[0-9a-fA-F]{6}$"
 
 SITE_TEMPLATES = ("portada", "editorial", "compacto", "dividido", "mosaico")
-SITE_SECTION_TYPES = ("location", "promo", "featured", "destinations", "text", "cta")
+SITE_SECTION_TYPES = ("location", "promo", "featured", "destinations", "text", "cta", "reviews")
 # Every layout any block can use; the frontend offers the ones that fit each type
 # and falls back to the type's first layout for anything else.
 SITE_SECTION_LAYOUTS = (
@@ -23,6 +23,8 @@ SITE_SECTION_LAYOUTS = (
     "centered",
     "color",
     "photo",
+    "cards",
+    "quote",
 )
 SITE_BUTTON_TARGETS = ("contact", "whatsapp", "properties")
 ISO_DATE_RE = r"^\d{4}-\d{2}-\d{2}$"
