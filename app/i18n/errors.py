@@ -171,6 +171,16 @@ EXACT: dict[str, _T] = {
         "Ο τρέχων κωδικός είναι λανθασμένος.",
         "Trenutačna lozinka nije točna.",
     ),
+    "Invalid or expired code": _nf(
+        "El código no es correcto o ya venció. Revisalo o pedí uno nuevo.",
+        "The code is wrong or has expired. Check it or ask for a new one.",
+        "O código não está correto ou já expirou. Verifique-o ou peça um novo.",
+        "Le code est incorrect ou a expiré. Vérifiez-le ou demandez-en un nouveau.",
+        "Der Code ist falsch oder abgelaufen. Prüfe ihn oder fordere einen neuen an.",
+        "Il codice non è corretto o è scaduto. Controllalo o richiedine uno nuovo.",
+        "Ο κωδικός είναι λανθασμένος ή έχει λήξει. Ελέγξτε τον ή ζητήστε νέο.",
+        "Kod nije točan ili je istekao. Provjerite ga ili zatražite novi.",
+    ),
     "Invalid credentials": _nf(
         "Email o contraseña incorrectos.",
         "Incorrect email or password.",

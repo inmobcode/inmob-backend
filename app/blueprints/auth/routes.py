@@ -7,8 +7,10 @@ from app.extensions import db
 from app.models import User
 from app.schemas.auth import (
     ChangePasswordSchema,
+    ForgotPasswordSchema,
     LoginSchema,
     RegisterAgencySchema,
+    ResetPasswordSchema,
     UpdateProfileSchema,
 )
 from app.schemas.user import UserSchema
@@ -59,6 +61,33 @@ def login():
         return jsonify({"message": err.message}), err.status_code
 
     return jsonify(_auth_payload(result))
+
+
+@bp.route("/password/forgot", methods=["POST"])
+def forgot_password():
+    try:
+        data = ForgotPasswordSchema().load(request.get_json(silent=True) or {})
+    except ValidationError as err:
+        return jsonify({"message": "Validation error", "errors": err.messages}), 400
+
+    # Same answer whether or not the email has an account.
+    auth_service.request_password_reset(data["email"])
+    return "", 204
+
+
+@bp.route("/password/reset", methods=["POST"])
+def reset_password():
+    try:
+        data = ResetPasswordSchema().load(request.get_json(silent=True) or {})
+    except ValidationError as err:
+        return jsonify({"message": "Validation error", "errors": err.messages}), 400
+
+    try:
+        auth_service.reset_password(data["email"], data["code"], data["password"])
+    except auth_service.AuthError as err:
+        return jsonify({"message": err.message}), err.status_code
+
+    return "", 204
 
 
 @bp.route("/refresh", methods=["POST"])

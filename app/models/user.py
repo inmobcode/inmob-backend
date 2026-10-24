@@ -30,6 +30,12 @@ class User(db.Model, TimestampMixin):
     # The language they use the dashboard in (synced from the X-Locale header);
     # emails meant for them go out in it. Null until they first use the app.
     locale = db.Column(db.String(5), nullable=True)
+    # Password recovery: the hash of the 6-digit code emailed to them, when it
+    # stops working (naive UTC) and how many wrong tries it has taken. Null / 0
+    # while no recovery is in progress. See auth_service.request_password_reset.
+    reset_code_hash = db.Column(db.String(255), nullable=True)
+    reset_code_expires_at = db.Column(db.DateTime, nullable=True)
+    reset_code_attempts = db.Column(db.Integer, nullable=False, default=0, server_default="0")
 
     agency = db.relationship("Agency", back_populates="users")
     memberships = db.relationship(

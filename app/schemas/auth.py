@@ -15,6 +15,16 @@ class LoginSchema(Schema):
     password = fields.Str(required=True, load_only=True)
 
 
+class ForgotPasswordSchema(Schema):
+    email = fields.Email(required=True)
+
+
+class ResetPasswordSchema(Schema):
+    email = fields.Email(required=True)
+    code = fields.Str(required=True, load_only=True, validate=validate.Regexp(r"^\d{6}$"))
+    password = fields.Str(required=True, load_only=True, validate=validate.Length(min=8))
+
+
 class UpdateProfileSchema(Schema):
     name = fields.Str(validate=validate.Length(min=2, max=200))
     email = fields.Email()
