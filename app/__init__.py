@@ -23,6 +23,7 @@ def create_app(config_class: type = Config) -> Flask:
 
     register_blueprints(app)
     register_locale_hooks(app)
+    register_subscription_gate(app)
 
     @app.route("/api/health")
     def health():
@@ -82,10 +83,43 @@ def register_locale_hooks(app: Flask) -> None:
         return response
 
 
+# Routes an agency without a subscription can still reach: signing in, choosing
+# a plan and paying, the public pages and Paddle's webhook.
+_OPEN_PREFIXES = ("/api/auth", "/api/billing", "/api/public", "/api/health")
+
+
+def register_subscription_gate(app: Flask) -> None:
+    """An agency that hasn't added a card, or whose subscription ended, gets 402."""
+    from flask import request
+    from flask_jwt_extended import get_jwt, verify_jwt_in_request
+
+    from app.models import Agency
+    from app.services import billing_service
+
+    @app.before_request
+    def _require_subscription():
+        if request.method == "OPTIONS" or not request.path.startswith("/api/"):
+            return None
+        if request.path.startswith(_OPEN_PREFIXES) or not billing_service.enabled():
+            return None
+        try:
+            verify_jwt_in_request(optional=True)
+            agency_id = get_jwt().get("agency_id")
+        except Exception:  # noqa: BLE001 - a bad token is the route's business, not ours
+            return None
+        if not agency_id:
+            return None
+        agency = db.session.get(Agency, agency_id)
+        if agency is not None and not billing_service.has_access(agency):
+            return jsonify({"message": "Subscription required", "code": "subscription_required"}), 402
+        return None
+
+
 def register_blueprints(app: Flask) -> None:
     from app.blueprints.agency import bp as agency_bp
     from app.blueprints.auth import bp as auth_bp
     from app.blueprints.availability import bp as availability_bp
+    from app.blueprints.billing import bp as billing_bp
     from app.blueprints.bookings import bp as bookings_bp
     from app.blueprints.clients import bp as clients_bp
     from app.blueprints.dashboard import bp as dashboard_bp
@@ -106,6 +140,7 @@ def register_blueprints(app: Flask) -> None:
 
     for bp in (
         auth_bp,
+        billing_bp,
         agency_bp,
         properties_bp,
         imports_bp,

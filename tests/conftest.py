@@ -8,6 +8,7 @@ from app.extensions import db
 class TestConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    BILLING_ENABLED = False
 
 
 @pytest.fixture()
@@ -26,7 +27,7 @@ def client(app):
 
 @pytest.fixture()
 def register_agency(client):
-    def _register(agency_name="Agencia Demo", email="owner@demo.com"):
+    def _register(agency_name="Agencia Demo", email="owner@demo.com", plan="pro"):
         res = client.post(
             "/api/auth/register",
             json={
@@ -34,6 +35,7 @@ def register_agency(client):
                 "name": "Owner",
                 "email": email,
                 "password": "password123",
+                "plan": plan,
             },
         )
         body = res.get_json()

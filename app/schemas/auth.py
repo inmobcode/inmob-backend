@@ -8,6 +8,8 @@ class RegisterAgencySchema(Schema):
     name = fields.Str(required=True, validate=validate.Length(min=2, max=200))
     email = fields.Email(required=True)
     password = fields.Str(required=True, load_only=True, validate=validate.Length(min=8))
+    # The plan picked on the sign-up screen; Enterprise goes through sales instead.
+    plan = fields.Str(load_default="trial", validate=validate.OneOf(("trial", "pro")))
 
 
 class LoginSchema(Schema):

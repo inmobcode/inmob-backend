@@ -5,7 +5,7 @@ one row per person who should hear about it, so everyone reads (and clears)
 their own. A failure here is logged and swallowed: it must never undo or block
 the action that caused it.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from flask import current_app
 from sqlalchemy import func
@@ -27,6 +27,21 @@ def _managers(agency_id: str) -> set[str]:
         .filter(
             AgencyMembership.agency_id == agency_id,
             AgencyMembership.role.in_(("OWNER", "ADMIN")),
+            User.is_active.is_(True),
+        )
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def _owners(agency_id: str) -> set[str]:
+    """Whoever pays: the agency's owners."""
+    rows = (
+        db.session.query(AgencyMembership.user_id)
+        .join(User, User.id == AgencyMembership.user_id)
+        .filter(
+            AgencyMembership.agency_id == agency_id,
+            AgencyMembership.role == "OWNER",
             User.is_active.is_(True),
         )
         .all()
@@ -62,6 +77,13 @@ def render(kind: str, params: dict, locale: str) -> tuple[str, str | None]:
         return i18n.t(locale, "notif.client"), params["name"]
     if kind == "REVIEW":
         return i18n.t(locale, "notif.review", name=params["name"], rating=params["rating"]), params.get("text")
+    if kind == "TRIAL_ENDING":
+        return (
+            i18n.t(locale, "notif.trial_ending", date=i18n.short_date(locale, date.fromisoformat(params["date"]))),
+            i18n.t(locale, "notif.trial_ending_body"),
+        )
+    if kind == "PAYMENT_FAILED":
+        return i18n.t(locale, "notif.payment_failed"), i18n.t(locale, "notif.payment_failed_body")
     raise ValueError(kind)
 
 
@@ -171,6 +193,36 @@ def notify_review(review) -> None:
         link="/reviews",
         user_ids=_managers(review.agency_id),
     )
+
+
+def _recently_notified(agency_id: str, kind: str, days: int = 7) -> bool:
+    since = _now() - timedelta(days=days)
+    return (
+        Notification.query.filter(
+            Notification.agency_id == agency_id, Notification.type == kind, Notification.created_at >= since
+        ).first()
+        is not None
+    )
+
+
+def notify_trial_ending(agency: Agency) -> None:
+    """The heads-up, three days before the trial turns into Pro."""
+    if agency.trial_ends_at is None or _recently_notified(agency.id, "TRIAL_ENDING"):
+        return
+    notify(
+        agency.id,
+        "TRIAL_ENDING",
+        {"date": agency.trial_ends_at.date().isoformat()},
+        link="/settings",
+        user_ids=_owners(agency.id),
+    )
+
+
+def notify_payment_failed(agency: Agency) -> None:
+    """The card was declined and Paddle is retrying the charge: the agency still has access, for now."""
+    if _recently_notified(agency.id, "PAYMENT_FAILED", days=3):
+        return
+    notify(agency.id, "PAYMENT_FAILED", {}, link="/settings", user_ids=_owners(agency.id))
 
 
 def list_for_user(user_id: str, agency_id: str, *, limit: int = 30) -> list[Notification]:

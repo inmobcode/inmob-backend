@@ -48,3 +48,22 @@ class Config:
     # guard). Local development needs it off to read a feed served from
     # localhost; never set this in production.
     IMPORT_ALLOW_PRIVATE_URLS = os.environ.get("IMPORT_ALLOW_PRIVATE_URLS") == "1"
+
+    # Subscriptions through Paddle, which sells on our behalf (merchant of record):
+    # it charges the card, issues the invoice and handles the taxes. With
+    # BILLING_ENABLED=0 (local development, tests) nobody is asked for a card: new
+    # agencies start with access straight away. In production leave it on: an agency
+    # without a subscription is locked out until it adds a card.
+    BILLING_ENABLED = os.environ.get("BILLING_ENABLED", "1") == "1"
+    # "sandbox" (test account) or "production".
+    PADDLE_ENV = os.environ.get("PADDLE_ENV", "sandbox")
+    # Server key (pdl_...): never reaches the browser.
+    PADDLE_API_KEY = os.environ.get("PADDLE_API_KEY")
+    # Public token (live_... / test_...) that Paddle.js uses in the browser.
+    PADDLE_CLIENT_TOKEN = os.environ.get("PADDLE_CLIENT_TOKEN")
+    # Signs the events Paddle posts to /api/billing/webhook.
+    PADDLE_WEBHOOK_SECRET = os.environ.get("PADDLE_WEBHOOK_SECRET")
+    # The monthly Pro price (pri_...), and the same price with a 14-day free trial
+    # (a trial is a property of the price in Paddle, so there are two).
+    PADDLE_PRICE_PRO = os.environ.get("PADDLE_PRICE_PRO")
+    PADDLE_PRICE_TRIAL = os.environ.get("PADDLE_PRICE_TRIAL")

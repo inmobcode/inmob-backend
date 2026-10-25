@@ -10,7 +10,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from app import i18n
 from app.extensions import db
 from app.models import Agency, AgencyMembership, User
-from app.services import email_service
+from app.services import billing_service, email_service
 from app.utils.slugify import slugify
 
 # Password recovery: how long an emailed code works, how many wrong tries it
@@ -80,7 +80,11 @@ def register_agency(data: dict) -> dict:
         name=data["agency_name"],
         slug=_unique_slug(data["agency_name"]),
         contact_email=data["email"],
+        plan=data["plan"],
     )
+    # With billing on the agency waits (locked out) for the card; without it, access starts now.
+    if not billing_service.enabled():
+        billing_service.start_without_billing(agency)
     db.session.add(agency)
     db.session.flush()  # assigns agency.id for the FKs below
 

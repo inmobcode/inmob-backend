@@ -6,12 +6,22 @@ from flask_jwt_extended import get_jwt_identity
 from app.blueprints.imports import bp
 from app.i18n import request_locale
 from app.i18n.imports import field_label, localize_plan
-from app.services import import_service
+from app.extensions import db
+from app.models import Agency
+from app.services import billing_service, import_service
 from app.services.importers.fields import IMPORT_FIELDS
 from app.utils.tenancy import current_agency_id, require_role
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 PREVIEW_ROWS = 500
+
+
+@bp.before_request
+def _not_in_the_trial():
+    """The data-migration tool is not part of the free trial."""
+    agency = db.session.get(Agency, current_agency_id())
+    if agency is not None and not billing_service.features(agency)["import"]:
+        return jsonify({"message": "Data import isn't included in the free trial"}), 403
 
 
 def _plan_from_request():

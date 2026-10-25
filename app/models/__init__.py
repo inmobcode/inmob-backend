@@ -1,4 +1,4 @@
-from app.models.agency import Agency
+from app.models.agency import Agency, TrialCard
 from app.models.audit import AuditEvent
 from app.models.review import Review
 from app.models.availability import AvailabilityBlock

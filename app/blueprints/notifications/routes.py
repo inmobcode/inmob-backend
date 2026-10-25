@@ -1,7 +1,9 @@
 from flask import jsonify, request
 
 from app.blueprints.notifications import bp
-from app.services import feed
+from app.extensions import db
+from app.models import Agency
+from app.services import billing_service, feed
 from app.utils.tenancy import current_agency_id, current_user_id
 
 
@@ -25,6 +27,10 @@ def serialize(notification) -> dict:
 @bp.route("/", methods=["GET"])
 def list_notifications():
     agency_id, user_id = current_agency_id(), current_user_id()
+    # Paddle sends no "trial ending" event: the bell checks the date as it's opened.
+    agency = db.session.get(Agency, agency_id)
+    if agency is not None and billing_service.enabled():
+        billing_service.maybe_remind_trial_end(agency)
     items = feed.list_for_user(user_id, agency_id)
     return jsonify(
         {
