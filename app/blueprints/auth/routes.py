@@ -12,6 +12,7 @@ from app.schemas.auth import (
     RegisterAgencySchema,
     ResetPasswordSchema,
     UpdateProfileSchema,
+    VerifyEmailSchema,
 )
 from app.schemas.user import UserSchema
 from app.services import auth_service, storage_service
@@ -45,7 +46,35 @@ def register():
     except auth_service.AuthError as err:
         return jsonify({"message": err.message}), err.status_code
 
-    return jsonify(_auth_payload(result)), 201
+    # No tokens yet: the account opens with the code emailed to them.
+    return jsonify({"email": result["user"].email}), 201
+
+
+@bp.route("/email/verify", methods=["POST"])
+def verify_email():
+    try:
+        data = VerifyEmailSchema().load(request.get_json(silent=True) or {})
+    except ValidationError as err:
+        return jsonify({"message": "Validation error", "errors": err.messages}), 400
+
+    try:
+        result = auth_service.verify_email(data["email"], data["code"])
+    except auth_service.AuthError as err:
+        return jsonify({"message": err.message}), err.status_code
+
+    return jsonify(_auth_payload(result))
+
+
+@bp.route("/email/resend", methods=["POST"])
+def resend_email_code():
+    try:
+        data = ForgotPasswordSchema().load(request.get_json(silent=True) or {})
+    except ValidationError as err:
+        return jsonify({"message": "Validation error", "errors": err.messages}), 400
+
+    # Same answer whether or not the email has an unverified account.
+    auth_service.resend_verification_code(data["email"])
+    return "", 204
 
 
 @bp.route("/login", methods=["POST"])

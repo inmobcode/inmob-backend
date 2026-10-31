@@ -1,12 +1,10 @@
 from unittest.mock import patch
 
+from tests.conftest import sign_up
+
 
 def _register(client, agency_name="Agencia Demo", email="owner@demo.com"):
-    res = client.post(
-        "/api/auth/register",
-        json={"agencyName": agency_name, "name": "Owner", "email": email, "password": "password123"},
-    )
-    return res.get_json()["accessToken"]
+    return sign_up(client, agency_name=agency_name, email=email).get_json()["accessToken"]
 
 
 EMAIL_TARGET = "app.services.team_service._send_invite_email"

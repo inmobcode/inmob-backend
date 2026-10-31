@@ -291,6 +291,16 @@ EXACT: dict[str, _T] = {
         "Λανθασμένο email ή κωδικός.",
         "Pogrešna e-pošta ili lozinka.",
     ),
+    "Email not verified": _nf(
+        "Falta verificar tu email. Te mandamos un código para confirmarlo.",
+        "Your email isn’t verified yet. We sent you a code to confirm it.",
+        "O seu email ainda não foi verificado. Enviámos-lhe um código para o confirmar.",
+        "Votre e-mail n’est pas encore vérifié. Nous vous avons envoyé un code pour le confirmer.",
+        "Deine E-Mail ist noch nicht bestätigt. Wir haben dir einen Code zur Bestätigung geschickt.",
+        "La tua email non è ancora verificata. Ti abbiamo inviato un codice per confermarla.",
+        "Το email σας δεν έχει επαληθευτεί ακόμη. Σας στείλαμε έναν κωδικό για να το επιβεβαιώσετε.",
+        "Vaša e-pošta još nije potvrđena. Poslali smo vam kod za potvrdu.",
+    ),
     "This account isn't linked to any agency": _nf(
         "Esta cuenta no pertenece a ninguna agencia.",
         "This account isn’t linked to any agency.",

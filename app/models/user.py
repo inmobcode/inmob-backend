@@ -37,6 +37,15 @@ class User(db.Model, TimestampMixin):
     reset_code_expires_at = db.Column(db.DateTime, nullable=True)
     reset_code_attempts = db.Column(db.Integer, nullable=False, default=0, server_default="0")
 
+    # Whether they proved the email is theirs. New sign-ups start unverified and
+    # can't sign in until they enter the emailed code (same shape as the reset
+    # code above; see auth_service.verify_email). Invited teammates start
+    # verified: the invite email carries their first password.
+    email_verified = db.Column(db.Boolean, nullable=False, default=False)
+    verify_code_hash = db.Column(db.String(255), nullable=True)
+    verify_code_expires_at = db.Column(db.DateTime, nullable=True)
+    verify_code_attempts = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+
     agency = db.relationship("Agency", back_populates="users")
     memberships = db.relationship(
         "AgencyMembership", back_populates="user", cascade="all, delete-orphan"

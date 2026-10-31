@@ -75,7 +75,9 @@ def invite_member(agency_id: str, data: dict) -> tuple[User, bool]:
     temp_password = secrets.token_urlsafe(9)
     # They start in the language of whoever invited them; the dashboard keeps it in sync afterwards.
     locale = i18n.pick(i18n.request_locale(), agency.locale)
-    user = User(agency_id=agency_id, name=data["name"], email=email, role=role, locale=locale)
+    user = User(
+        agency_id=agency_id, name=data["name"], email=email, role=role, locale=locale, email_verified=True
+    )
     user.set_password(temp_password)
     db.session.add(user)
     db.session.flush()  # assigns user.id for the membership FK below

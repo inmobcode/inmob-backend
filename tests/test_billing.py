@@ -12,6 +12,7 @@ from app.config import Config
 from app.extensions import db
 from app.models import Agency
 from app.services import billing_service
+from tests.conftest import sign_up
 
 
 # The real one, before the autouse fixture below replaces it.
@@ -76,11 +77,8 @@ def paddle():
 
 
 def _register(client, plan=None, email="owner@demo.com"):
-    body = {"agencyName": "Agencia", "name": "Owner", "email": email, "password": "password123"}
-    if plan:
-        body["plan"] = plan
-    res = client.post("/api/auth/register", json=body)
-    assert res.status_code == 201
+    res = sign_up(client, agency_name="Agencia", email=email, plan=plan)
+    assert res.status_code == 200
     data = res.get_json()
     return {"Authorization": f"Bearer {data['accessToken']}"}, data["user"]["agencyId"]
 
@@ -94,10 +92,7 @@ def test_without_billing_the_trial_starts_with_access(client, register_agency):
 
 
 def test_without_billing_pro_has_the_import_tool(client):
-    res = client.post(
-        "/api/auth/register",
-        json={"agencyName": "Agencia", "name": "Owner", "email": "p@demo.com", "password": "password123", "plan": "pro"},
-    )
+    res = sign_up(client, agency_name="Agencia", email="p@demo.com", plan="pro")
     headers = {"Authorization": f"Bearer {res.get_json()['accessToken']}"}
     body = client.get("/api/billing/status", headers=headers).get_json()
     assert (body["status"], body["plan"], body["features"]["import"]) == ("ACTIVE", "pro", True)
