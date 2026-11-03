@@ -281,6 +281,16 @@ EXACT: dict[str, _T] = {
         "Ο κωδικός είναι λανθασμένος ή έχει λήξει. Ελέγξτε τον ή ζητήστε νέο.",
         "Kod nije točan ili je istekao. Provjerite ga ili zatražite novi.",
     ),
+    "New password must differ from the current one": _nf(
+        "La contraseña nueva tiene que ser distinta de la actual.",
+        "The new password must be different from the current one.",
+        "A nova palavra-passe tem de ser diferente da atual.",
+        "Le nouveau mot de passe doit être différent de l’actuel.",
+        "Das neue Passwort muss sich vom aktuellen unterscheiden.",
+        "La nuova password deve essere diversa da quella attuale.",
+        "Ο νέος κωδικός πρέπει να διαφέρει από τον τρέχοντα.",
+        "Nova lozinka mora se razlikovati od trenutačne.",
+    ),
     "Invalid credentials": _nf(
         "Email o contraseña incorrectos.",
         "Incorrect email or password.",

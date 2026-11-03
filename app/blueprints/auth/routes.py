@@ -13,6 +13,7 @@ from app.schemas.auth import (
     ResetPasswordSchema,
     UpdateProfileSchema,
     VerifyEmailSchema,
+    VerifyResetCodeSchema,
 )
 from app.schemas.user import UserSchema
 from app.services import auth_service, storage_service
@@ -101,6 +102,21 @@ def forgot_password():
 
     # Same answer whether or not the email has an account.
     auth_service.request_password_reset(data["email"])
+    return "", 204
+
+
+@bp.route("/password/verify", methods=["POST"])
+def verify_reset_code():
+    try:
+        data = VerifyResetCodeSchema().load(request.get_json(silent=True) or {})
+    except ValidationError as err:
+        return jsonify({"message": "Validation error", "errors": err.messages}), 400
+
+    try:
+        auth_service.verify_reset_code(data["email"], data["code"])
+    except auth_service.AuthError as err:
+        return jsonify({"message": err.message}), err.status_code
+
     return "", 204
 
 

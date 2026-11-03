@@ -376,3 +376,29 @@ def test_a_second_code_is_not_sent_right_away(client):
     code, send = _request_code(client)
     assert code is None
     assert not send.called
+
+
+def test_verify_reset_code_checks_without_burning_it(client):
+    _register(client)
+    code, _ = _request_code(client)
+    wrong = "000000" if code != "000000" else "111111"
+    bad = client.post("/api/auth/password/verify", json={"email": "owner@demo.com", "code": wrong})
+    assert bad.status_code == 400
+    ok = client.post("/api/auth/password/verify", json={"email": "owner@demo.com", "code": code})
+    assert ok.status_code == 204
+    # Still good for the real reset afterwards.
+    done = client.post(
+        "/api/auth/password/reset",
+        json={"email": "owner@demo.com", "code": code, "password": "brand-new-pass"},
+    )
+    assert done.status_code == 204
+
+
+def test_reset_rejects_the_current_password(client):
+    _register(client)
+    code, _ = _request_code(client)
+    res = client.post(
+        "/api/auth/password/reset",
+        json={"email": "owner@demo.com", "code": code, "password": "password123"},
+    )
+    assert res.status_code == 409

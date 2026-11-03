@@ -137,28 +137,58 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _code_email_html(
+    locale: str, kind: str, name: str, code: str, minutes: int, url: str, logo_url: str
+) -> str:
+    """Table layout with inline styles: the only thing mail clients render alike."""
+    font = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif"
+    mono = "SFMono-Regular,Menlo,Consolas,monospace"
+    return (
+        f'<div style="margin:0;padding:32px 16px;background:#eef1ea;font-family:{font};color:#1b201e">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'style="max-width:520px;margin:0 auto;border-collapse:separate">'
+        # Header band in the brand forest, with the logo (a PNG: mail clients drop inline SVG).
+        '<tr><td style="background:#164832;border-radius:16px 16px 0 0;padding:28px 32px">'
+        f'<img src="{escape(logo_url)}" alt="" width="28" height="23" style="display:inline-block;'
+        'vertical-align:middle;margin-right:10px;border:0">'
+        '<span style="vertical-align:middle;font-size:22px;font-weight:700;letter-spacing:-0.5px;color:#ffffff">Tivvu</span>'
+        "</td></tr>"
+        '<tr><td style="background:#ffffff;border-radius:0 0 16px 16px;padding:36px 32px 32px">'
+        f'<h1 style="margin:0 0 12px;font-size:24px;line-height:1.2;letter-spacing:-0.5px">'
+        f'{escape(i18n.t(locale, f"{kind}.hello", name=name))}</h1>'
+        f'<p style="margin:0 0 28px;font-size:15px;line-height:1.55;color:#4a524e">'
+        f'{escape(i18n.t(locale, f"{kind}.lead"))}</p>'
+        # One element, not a box per digit, so a double click selects the whole code.
+        '<p style="margin:0 0 12px;padding:20px 8px;background:#f1f5ec;border:1px solid #dbe3d2;'
+        'border-radius:12px;text-align:center;font-size:36px;font-weight:700;letter-spacing:12px;'
+        f'text-indent:12px;font-family:{mono};color:#0f3524">{code}</p>'
+        f'<p style="margin:0 0 32px;text-align:center;font-size:13px;color:#646b67">'
+        f'{escape(i18n.t(locale, f"{kind}.expires", minutes=minutes))}</p>'
+        '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto"><tr>'
+        '<td style="background:#164832;border-radius:10px">'
+        f'<a href="{escape(url)}" style="display:inline-block;padding:14px 28px;font-size:15px;'
+        f'font-weight:600;color:#ffffff;text-decoration:none">{escape(i18n.t(locale, f"{kind}.open"))}</a>'
+        "</td></tr></table>"
+        '<hr style="margin:32px 0 20px;border:0;border-top:1px solid #e4e8df">'
+        f'<p style="margin:0;font-size:13px;line-height:1.5;color:#646b67">'
+        f'{escape(i18n.t(locale, f"{kind}.ignore"))}</p>'
+        "</td></tr></table></div>"
+    )
+
+
 def _send_code_email(
     user: User, code: str, locale: str, *, kind: str, minutes: int, path: str
 ) -> None:
     """The email with a 6-digit code and a button to the page where it's typed.
     `kind` picks the strings ("reset" or "verify" in app/i18n/messages.py)."""
+    base = current_app.config["FRONTEND_URL"].rstrip("/")
     query = urlencode({"email": user.email, "lang": locale})
-    url = f"{current_app.config['FRONTEND_URL'].rstrip('/')}{path}?{query}"
     email_service.send_email(
         [user.email],
         i18n.t(locale, f"{kind}.subject", code=code),
-        '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;'
-        'line-height:1.55;color:#1b201e;max-width:560px;margin:0 auto;padding:24px">'
-        f'<h1 style="font-size:20px;margin:0 0 16px">{escape(i18n.t(locale, f"{kind}.hello", name=user.name))}</h1>'
-        f'<p style="margin:0 0 12px">{escape(i18n.t(locale, f"{kind}.lead"))}</p>'
-        '<p style="margin:16px 0;font-size:32px;font-weight:600;letter-spacing:8px;'
-        f'font-family:SFMono-Regular,Menlo,Consolas,monospace">{code}</p>'
-        f'<p style="margin:0 0 12px">{escape(i18n.t(locale, f"{kind}.expires", minutes=minutes))}</p>'
-        f'<p style="margin:24px 0 0"><a href="{escape(url)}" style="background:#164832;color:#fff;'
-        f'padding:10px 16px;border-radius:8px;text-decoration:none">{escape(i18n.t(locale, f"{kind}.open"))}</a></p>'
-        '<p style="margin:16px 0 0;color:#646b67;font-size:13px">'
-        f'{escape(i18n.t(locale, f"{kind}.ignore"))}</p>'
-        "</div>",
+        _code_email_html(
+            locale, kind, user.name, code, minutes, f"{base}{path}?{query}", f"{base}/email/logo.png"
+        ),
         locale=locale,
     )
 
@@ -195,7 +225,8 @@ def _clear_reset_code(user: User) -> None:
     user.reset_code_attempts = 0
 
 
-def reset_password(email: str, code: str, password: str) -> None:
+def _check_reset_code(email: str, code: str) -> User:
+    """Returns the user if the code is right. Wrong tries count, in either step."""
     invalid = AuthError("Invalid or expired code", 400)
     user = User.query.filter_by(email=email).first()
     if (
@@ -214,7 +245,19 @@ def reset_password(email: str, code: str, password: str) -> None:
             _clear_reset_code(user)
         db.session.commit()
         raise invalid
+    return user
 
+
+def verify_reset_code(email: str, code: str) -> None:
+    """Lets the form tell a wrong code before asking for the new password. Keeps the code."""
+    _check_reset_code(email, code)
+
+
+def reset_password(email: str, code: str, password: str) -> None:
+    user = _check_reset_code(email, code)
+    # After the code check, so the answer never tells a stranger what the password is.
+    if user.check_password(password):
+        raise AuthError("New password must differ from the current one", 409)
     user.set_password(password)
     # The code came to their inbox, which is what verifying the email proves.
     user.email_verified = True
