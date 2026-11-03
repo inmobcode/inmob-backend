@@ -256,7 +256,13 @@ def verify_reset_code(email: str, code: str) -> None:
 def reset_password(email: str, code: str, password: str) -> None:
     user = _check_reset_code(email, code)
     # After the code check, so the answer never tells a stranger what the password is.
+    # It still says whether a guess is the current password, so each one costs a try
+    # of the code: whoever holds it can't sit there probing the old password.
     if user.check_password(password):
+        user.reset_code_attempts += 1
+        if user.reset_code_attempts >= RESET_CODE_MAX_ATTEMPTS:
+            _clear_reset_code(user)
+        db.session.commit()
         raise AuthError("New password must differ from the current one", 409)
     user.set_password(password)
     # The code came to their inbox, which is what verifying the email proves.

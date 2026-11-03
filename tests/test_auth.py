@@ -402,3 +402,13 @@ def test_reset_rejects_the_current_password(client):
         json={"email": "owner@demo.com", "code": code, "password": "password123"},
     )
     assert res.status_code == 409
+
+
+def test_guessing_the_current_password_burns_the_code(client):
+    _register(client)
+    code, _ = _request_code(client)
+    body = {"email": "owner@demo.com", "code": code, "password": "password123"}
+    statuses = [client.post("/api/auth/password/reset", json=body).status_code for _ in range(10)]
+    # A few 409s at most, then the code is gone and every answer is the same 400.
+    assert statuses[0] == 409
+    assert statuses[-1] == 400
